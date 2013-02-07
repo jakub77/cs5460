@@ -1,4 +1,7 @@
-/* 
+/* Used by Jakub Szpunar 
+ * CS5460
+ * HW 2
+ *
  * THIS FILE IS ADAPTED FROM:
  *
  * cfake.c - implementation of a simple module for a character device 
@@ -43,6 +46,7 @@
 struct ticket_dev {
   struct mutex ticket_mutex; 
   struct cdev cdev;
+  // Store the ticket number.
   int ticketNumber;
 };
 
@@ -102,31 +106,33 @@ ticket_read(struct file *filp, char __user *buf, size_t count,
 {
   struct ticket_dev *dev = (struct ticket_dev *)filp->private_data;
   ssize_t retval = 0;
-  int temp;
 	
   if (mutex_lock_killable(&dev->ticket_mutex))
     return -EINTR;
   
-  //dev->ticketNumber = 1007;
-  
-  retval = -EINVAL;
+  // Only support a request for 4 bytes.
   if(count != 4)
-    goto retUser;
+    {
+      retval = -EINVAL;
+      goto retUser;
+    }
 
-  temp = 1000;
+  // Attempt to copy the ticket number to the user's buffer.
+  // If 0 was not returned, an error occured.
   if(copy_to_user(buf, &(dev->ticketNumber), 4) != 0)
     {
       retval = -EIO;
       goto retUser;
     }
+
+  // User got ticket. Incremement the ticket number for the next user.
   dev->ticketNumber++;
   
-  
-  // your code starts here
+  // Set the return value to be the number of bytes copied.
   retval = 4;
-  // your code ends here
 
-retUser:
+  // Unlock mutex and send retval to user.
+ retUser:
   mutex_unlock(&dev->ticket_mutex);
   return retval;
 }
@@ -193,6 +199,10 @@ ticket_construct_device(struct ticket_dev *dev, int minor,
     cdev_del(&dev->cdev);
     return err;
   }
+
+  // When constructing the device, set the initial count to be 1000.
+  dev->ticketNumber = 1000;
+
   return 0;
 }
 
