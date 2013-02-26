@@ -1,4 +1,4 @@
-// Jakub Szpunar cs5460 HW3 Problem 5
+// Jakub Szpunar cs5460 HW3 Problem 5. fair spin lock.
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,9 +15,12 @@ int runTime;
 // The time when the program starts to run.
 time_t startTime;
 
+// Used to coordinate threads
 struct spin_lock_t
 {
+  // The client being served.
   volatile int serving;
+  // The position of the last client.
   volatile int inLine;
 };
 
@@ -38,13 +41,16 @@ static inline int atomic_xadd (volatile int *ptr)
 
 void spin_lock(struct spin_lock_t *s)
 {
+  // Get the next line position.
   int pos = atomic_xadd(&(s->inLine));
+  // Spin until our position is being served.
   while (pos != s->serving){}
   return;
 }
 
 void spin_unlock(struct spin_lock_t *s)
 {
+  // Incremement serving so the next thread can go.
   atomic_xadd(&(s->serving));
   return;
 }
@@ -53,6 +59,7 @@ void spin_unlock(struct spin_lock_t *s)
 // and release the lock. (Looping until time runs out.)
 void *thread(void *data)
 {
+  // Spin lock data.
   void* sl = (void*)data;
   // How many times we have been in the critical section.
   int timesInCrit = 0;

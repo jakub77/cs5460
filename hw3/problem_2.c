@@ -1,4 +1,4 @@
-// Jakub Szpunar cs5460 HW3 Problem 1: Single thread bakery algorithm.
+// Jakub Szpunar cs5460 HW3 Problem 2: Single thread yielding bakery algorithm.
 
 #include <stdio.h>
 #include <stdlib.h>

@@ -1,4 +1,4 @@
-// Jakub Szpunar cs5460 HW3 Problem 1: Single thread bakery algorithm.
+// Jakub Szpunar cs5460 HW3 Problem 3. Bakery with mfence()
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,7 +29,9 @@ int maxTicket()
   int i;
   for(i = 0; i < threadCount; i++)
     if(ticket[i] > maxTicket)
-      maxTicket = ticket[i];
+      {
+	maxTicket = ticket[i];
+      }
   return maxTicket;
 }
 
@@ -38,6 +40,10 @@ void lock(int tid)
 {
   // Get a ticket.
   choosing[tid] = 1;
+  // MFENCE() here
+  // Used to make sure that choosing[tid] is set before we set ticket.
+  // avoids race conditions.
+  mfence();
   ticket[tid] = maxTicket() + 1;
   choosing[tid] = 0;
 
@@ -51,6 +57,13 @@ void lock(int tid)
 	  // Wait if another thread is choosing a ticket.
 	  for(;;)
 	    {
+	      // mfence() to make sure choosing[i] is checked inside the for loop.
+	      // instead of the compiler doing something like:
+	      // int c = choosing[i]
+	      // for(;;)
+	      // if c!= 1)
+	      // break
+	      // This would not be correct as c doesn't get refreshed each round.
 	      mfence();
 	      if(choosing[i] != 1)
 		break;
@@ -58,6 +71,9 @@ void lock(int tid)
 	  // Wait until our ticket comes up. Break ties based on threadID.
 	  for(;;)
 	    {
+	      // mfence() to make sure ticket[] is checked inside the loop.
+	      // The reasoning is basically the same as for the previous mfence()
+	      // described on line 60.
 	      mfence();
 	      if(ticket[i] == 0)
 	  	break;

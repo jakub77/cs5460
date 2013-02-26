@@ -1,4 +1,4 @@
-// Jakub Szpunar cs5460 HW3 Problem 4
+// Jakub Szpunar cs5460 HW3 Problem 4. Unfair spin lock
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,6 +15,7 @@ int runTime;
 // The time when the program starts to run.
 time_t startTime;
 
+// Used to coordinate threads.
 struct spin_lock_t
 {
   volatile int lock;
@@ -44,19 +45,24 @@ static inline int atomic_cmpxchg (volatile int *ptr, int old, int new)
 
 void spin_lock(struct spin_lock_t *s)
 {
+  // Loop until the lock is not set.
+  // If the lock is not set, we set it.
   while(atomic_cmpxchg(&(s->lock), 0, 1)){}
   return;
 }
 
 void spin_unlock(struct spin_lock_t *s)
 {
+  // unlock the lock.
   s->lock = 0;
   return;
 }
+
 // Code for individual threads to run. Try to obtain the lock, make sure it is ours,
 // and release the lock. (Looping until time runs out.)
 void *thread(void *data)
 {
+  // Spin lock object.
   void* sl = (void*)data;
   // How many times we have been in the critical section.
   int timesInCrit = 0;
@@ -152,16 +158,5 @@ int main(int argc, char* argv[])
   return 0;
 }
 
-/* int main(int argc, char* argv[]) */
-/* { */
-/*   printf("%i, %s\n", argc, argv[0]); */
-/*   struct spin_lock_t sl = {5}; */
-/*   printf("SL starts at %i\n", sl.lock); */
-/*   int res = atomic_cmpxchg(&sl.lock, 0, 1); */
-/*   printf("Returned: %i\n", res); */
-/*   printf("Sl is now: %i\n", sl.lock); */
-
-/*   return 0; */
-/* } */
 
 
