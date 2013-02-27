@@ -68,26 +68,26 @@ void *thread(void *data)
   
   // Loop while we are not out of time.
   do
-  {
-    time(&nowTime);
-    // Get the lock.
-    spin_lock(sl);
-    // Assert the lock is ours.
-    assert (in_cs==0);
-    in_cs++;
-    assert (in_cs==1);
-    in_cs++;
-    assert (in_cs==2);
-    in_cs++;
-    assert (in_cs==3);
-    in_cs=0;
-    // Release the lock.
-    spin_unlock(sl);
-    // Incrememebt our times in critical section.
-    timesInCrit++;
-  }
+    {
+      time(&nowTime);
+      // Get the lock.
+      spin_lock(sl);
+      // Assert the lock is ours.
+      assert (in_cs==0);
+      in_cs++;
+      assert (in_cs==1);
+      in_cs++;
+      assert (in_cs==2);
+      in_cs++;
+      assert (in_cs==3);
+      in_cs=0;
+      // Release the lock.
+      spin_unlock(sl);
+      // Incrememebt our times in critical section.
+      timesInCrit++;
+    }
   while(difftime(nowTime, startTime) < runTime);
-
+  
   // Return timesInCrit.
   return (void*)(intptr_t)timesInCrit;
 }
