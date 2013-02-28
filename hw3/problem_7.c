@@ -1,4 +1,11 @@
-// Jakub Szpunar cs5460 HW3 Problem 7: Single thread bakery algorithm.
+// Jakub Szpunar cs5460 HW3 Problem 7: Locked Queue Test
+// Note lock implementations are not commented to save space, to see
+// lock comments, go to the specific problem that deals with that lock.
+//
+// To compile code a -D must be sent.
+// use -DBAKERY for bakery, -DSPINLOCK for spinlock, -DFAIRSPINLOCK for the
+// fair spin lock, and -DMUTEX for a pthreads mutex. Defining two things at
+// once will not work/compile.
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -6,67 +13,171 @@
 #include <time.h>
 #include <pthread.h>
 #include <stdint.h>
+#include <math.h>
 
 // pointer to the queue.
 int* queue;
 static const int MAX_QUEUE_SIZE = 32;
-int enqPos;
-int deqPos;
-int curQueueSize;
+// The positions of the queue the implementaiton is at.
+volatile int enqPos;
+volatile int deqPos;
+volatile int curQueueSize;
+// The thread counts.
 int proThreadCount;
 int conThreadCount;
 int threadCount;
+// The timer code.
 int runTime;
 time_t startTime;
 
+// Conditional compilation of different locks.
 #ifdef BAKERY
-
 volatile int* ticket;
 volatile int* choosing;
-
-// Return the maximum ticket in the ticket array.
+void mfence (void) {
+  asm volatile ("mfence" : : : "memory");
+}
 int maxTicket()
 {
   int maxTicket = 0;
   int i;
   for(i = 0; i < threadCount; i++)
     if(ticket[i] > maxTicket)
-      maxTicket = ticket[i];
+      {
+	maxTicket = ticket[i];
+      }
   return maxTicket;
 }
-
-// Obtain the lock.
 void lock(int tid)
 {
-  // Get a ticket.
   choosing[tid] = 1;
+  mfence();
   ticket[tid] = maxTicket() + 1;
   choosing[tid] = 0;
-
-  // Wait for the ticket to be up.
   int i;
   for(i = 0; i < threadCount; ++i)
     {
-      // Don't wait on yourself.
       if(i != tid)
 	{
-	  // Wait if another thread is choosing a ticket.
-	  while(choosing[i] == 1){}
-	  // Wait until our ticket comes up. Break ties based on threadID.
-	  while(ticket[i] != 0 &&( ticket[tid] > ticket[i] || (ticket[tid] == ticket[i] && tid > i))) {}
+	  for(;;)
+	    {
+	      mfence();
+	      if(choosing[i] != 1)
+		break;
+	    }
+	  for(;;)
+	    {
+	      mfence();
+	      if(ticket[i] == 0)
+	  	break;
+	      if(ticket[tid] > ticket[i])
+	  	continue;
+	      if(ticket[tid] == ticket[i])
+		{ 
+		  if(tid > i)
+		    {
+		      continue;
+		    }
+		}
+	      break;
+	    }
 	}
     }
 }
-
-// Release the lock.
 void unlock(int tid)
 {
   ticket[tid] = 0;
 }
-
 #endif
 
+#ifdef SPINLOCK
+struct spin_lock_t
+{
+  volatile int lock;
+};
+volatile struct spin_lock_t *sl;
+static inline int atomic_cmpxchg (volatile int *ptr, int old, int new)
+{
+  int ret;
+  asm volatile ("lock cmpxchgl %2,%1"
+    : "=a" (ret), "+m" (*ptr)     
+    : "r" (new), "0" (old)      
+    : "memory");         
+  return ret;                            
+}
+void spin_lock(struct spin_lock_t *s)
+{
+  while(atomic_cmpxchg(&(s->lock), 0, 1)){}
+  return;
+}
 
+void spin_unlock(struct spin_lock_t *s)
+{
+  s->lock = 0;
+  return;
+}
+#endif
+
+#ifdef FAIRSPINLOCK
+struct spin_lock_t
+{
+  volatile int serving;
+  volatile int inLine;
+};
+static inline int atomic_xadd (volatile int *ptr)
+{
+  register int val __asm__("eax") = 1;
+  asm volatile ("lock xaddl %0,%1"
+  : "+r" (val)
+  : "m" (*ptr)
+  : "memory"
+  );  
+  return val;
+}
+
+void spin_lock(struct spin_lock_t *s)
+{
+  int pos = atomic_xadd(&(s->inLine));
+  while (pos != s->serving){}
+  return;
+}
+
+void spin_unlock(struct spin_lock_t *s)
+{
+  atomic_xadd(&(s->serving));
+  return;
+}
+#endif
+
+#ifdef MUTEX
+pthread_mutex_t lock;
+#endif
+
+// Function to calculate the standard deviation of an array of data.
+float std_dev(int data[], int n)
+{
+  float mean = 0.0, sum_deviation = 0.0;
+  int i;
+  for(i = 0; i < n; i++)
+    mean += data[i];
+  mean /= n;
+  for(i = 0; i < n; i++)
+    sum_deviation += (data[i]-mean)*(data[i]-mean);
+  return sqrt(sum_deviation/n);
+}
+
+// Function to sum the contents of an array.
+int sum_array(int data[], int n)
+{
+  int sum = 0;
+  int i;
+  for(i = 0; i < n; i++)
+    sum += data[i];
+  return sum;
+}
+
+// Enqueue something into the queue.
+// Returns 1 if success, 0 if queue was full.
 int enq(int value)
 {
   if(curQueueSize >= 32)
@@ -83,6 +194,9 @@ int enq(int value)
   return 1;
 }
 
+// Dequeue something from the queue.
+// Return 1 if success, 0 if queue empty, 
+// *value is set to the dequeued value if success.
 int deq(int* value)
 {
   if(curQueueSize == 0)
@@ -99,78 +213,158 @@ int deq(int* value)
   return 1;
 }
 
-void initialize()
+// Initliaze the queue, also initialize lock code if possible.
+// Return 0 if an error occured, returns 1 otherwise.
+int initialize()
 {
+  // Queue stuff.
   enqPos = 0;
   deqPos = 0;
   curQueueSize = 0;
-  return;
+
+  // Lock stuff
+  #ifdef BAKERY
+  ticket = (int*)malloc(sizeof(int)*threadCount);
+  choosing = (int*)malloc(sizeof(int)*threadCount);
+  if(ticket == NULL || choosing == NULL)
+    {
+      printf("Malloc call failed.\n");
+      return 0;
+    }
+  int i;
+  for(i = 0; i < threadCount; i++)
+    {
+      ticket[i] = 0;
+      choosing[i] = 0;
+    }
+  #endif
+
+  #ifdef MUTEX
+  if(pthread_mutex_init(&lock, NULL))
+    {
+      printf("Mutex init failed\n");
+      return 0;
+    }
+  #endif
+  return 1;
 }
 
-void *proThread(void* data)
+// A producer thread. Returns the number of times it was able to
+// add to the queue. 
+#ifdef MUTEX
+void *proThread()
+#else
+void *proThread(void *data)
+#endif
 {
+  // Set up the count/time.
+  int proCount = 0;
+  time_t nowTime;
+
+  // Cast the argument depending on what lock.
   #ifdef BAKERY
   int tid = (intptr_t)data;
   #endif
+  #if defined(SPINLOCK) || defined(FAIRSPINLOCK)
+  void* sl = (void*)data;
+  #endif
 
-  int proCount = 0;
-  time_t nowTime;
-  
+  // Loop locking and adding to the queue.
   do
     {
+      // Lock using the selected lock.
       time(&nowTime);
-      
-#ifdef BAKERY
+      #ifdef BAKERY
       lock(tid);
-#endif
-	
+      #endif
+      #if defined(SPINLOCK) || defined(FAIRSPINLOCK)
+      spin_lock(sl);
+      #endif
+      #ifdef MUTEX
+      pthread_mutex_lock(&lock);
+      #endif
+      
+      // Try to add to the queue, if success, incremement count.
       if(enq(7))
 	proCount++;
-	
-      
-#ifdef BAKERY
+
+      // Unlock the selected lock.
+      #ifdef BAKERY
       unlock(tid);
-#endif
-	
+      #endif
+      #if defined(SPINLOCK) || defined(FAIRSPINLOCK)
+      spin_unlock(sl);
+      #endif
+      #ifdef MUTEX
+      pthread_mutex_unlock(&lock);
+      #endif
     }
   while(difftime(nowTime, startTime) < runTime);
 
+  // Return the count.
   return (void*)(intptr_t)proCount;
 }
 
-void *conThread(void* data)
+// A consumer thread tries to remove from the queue as fast as possible.
+// Returns the number of consumptions.
+#ifdef MUTEX
+void *conThread()
+#else
+void *conThread(void *data)
+#endif
 {
-  #ifdef BAKERY
-  int tid = (intptr_t)data;
-  #endif
+  // Set up count, time and the result of a dequeue.
   int conCount = 0;
   time_t nowTime;
   int res;
 
+  // Cast the arguments depending on the lock.
+  #ifdef BAKERY
+  int tid = (intptr_t)data;
+  #endif
+  #if defined(SPINLOCK) || defined(FAIRSPINLOCK)
+  void* sl = (void*)data;
+  #endif
+
+  // Loop locking, dequeueing, and unlocking.
   do
     {
+      // Lock the selected lock.
       time(&nowTime);
-      
       #ifdef BAKERY
       lock(tid);
       #endif
+      #if defined(SPINLOCK) || defined(FAIRSPINLOCK)
+      spin_lock(sl);
+      #endif
+      #ifdef MUTEX
+      pthread_mutex_lock(&lock);
+      #endif
 
+      // Dequeue, if success, incremement count.
       if(deq(&res))
 	conCount++;
-       
-      
-#ifdef BAKERY
-      lock(tid);
-#endif
 
+      // Unlock the selected lock.
+      #ifdef BAKERY
+      unlock(tid);
+      #endif
+      #if defined(SPINLOCK) || defined(FAIRSPINLOCK)
+      spin_unlock(sl);
+      #endif
+      #ifdef MUTEX
+      pthread_mutex_unlock(&lock);
+      #endif
     }
   while(difftime(nowTime, startTime) < runTime);
-  
+
+  // Return the number of dequeues. 
   return (void*)(intptr_t)conCount;
 }
 
-
-
+// Entry point into the program. Parses arguments, then creates
+// threads to enqueue and dequeue as fast as possible.
+// Outputs statistics about the operations at the end.
 int main(int argc, char *argv[])
 { 
   int i;
@@ -200,6 +394,7 @@ int main(int argc, char *argv[])
       printf("Runtime must be > 0\n");
       return 1;
     }
+  // Set the toal thread count.
   threadCount = proThreadCount + conThreadCount;
   
   // Set up the queue.
@@ -209,74 +404,116 @@ int main(int argc, char *argv[])
       printf("Malloc error.\n");
       return 1;
     }
-  initialize();
-
-  #ifdef BAKERY
-  // Malloc bakery arrays and make sure no error occured.
-  ticket = (int*)malloc(sizeof(int)*(proThreadCount+conThreadCount));
-  choosing = (int*)malloc(sizeof(int)*(proThreadCount+conThreadCount));
-  if(ticket == NULL || choosing == NULL)
-    {
-      printf("Malloc call failed.\n");
-      return 1;
-    }
-  // Initialize the arrays to zero.
-
-  for(i = 0; i < threadCount; i++)
-    {
-      ticket[i] = 0;
-      choosing[i] = 0;
-    }
+  
+  // Initialize the queue and the lock of choice
+  if(!initialize()) 
+    return 1;
+  #ifdef SPINLOCK
+  struct spin_lock_t sl = {0};
+  #endif
+  #ifdef FAIRSPINLOCK
+  struct spin_lock_t sl = {0, 0};
   #endif
 
-  // Set up the threads.
-  pthread_t proThreads[proThreadCount];
-  pthread_t conThreads[conThreadCount];
+  // Get ready to create threads, inform user.
+  pthread_t threads[threadCount];
   time(&startTime);
-
   printf("Starting up %i producers and %i consumers for %i seconds.\n", proThreadCount, conThreadCount, runTime);
 
-
+  // Create the producer threads.
   for(i = 0; i < proThreadCount; i++)
     {
-      if(pthread_create(&proThreads[i], NULL, proThread, (void*)(intptr_t) i))
+      // Pass an argument that depends on the lock.
+      #ifdef BAKERY
+      void *arg = (void*)(intptr_t)i;
+      #endif
+      #if defined(SPINLOCK) || defined(FAIRSPINLOCK)
+      void *arg = (void*)&sl;
+      #endif
+      #ifdef MUTEX
+      void *arg = (void*)&lock;
+      #endif
+      // Attempt to create the thread.
+      if(pthread_create(&threads[i], NULL, proThread, arg))
 	{
 	  printf("Error creating thread.\n");
 	  return 1;
 	}
     }
-  for(i = 0; i < conThreadCount; i++)
+  // Create the consumer threads.
+  for(i = proThreadCount; i < threadCount; i++)
     {
-      if(pthread_create(&conThreads[i], NULL, conThread, (void*)(intptr_t) (i+proThreadCount)))
+      // Pass a lock dependent argument.
+      #ifdef BAKERY
+      void *arg = (void*)(intptr_t)i;
+      #endif
+      #if defined(SPINLOCK) || defined(FAIRSPINLOCK)
+      void *arg = (void*)&sl;
+      #endif
+      #ifdef MUTEX
+      void *arg = (void*)&lock;
+      #endif
+      // Attempt to create the thread.
+      if(pthread_create(&threads[i], NULL, conThread, arg))
 	{
 	  printf("Error creating thread.\n");
 	  return 1;
 	}
     }
 
+  // Store producer results.
+  int proResults[proThreadCount];
+  // Join the producer threads.
   for(i = 0; i < proThreadCount; i++)
     {
       void *status;
-      if(pthread_join(proThreads[i], &status))
+      if(pthread_join(threads[i], &status))
 	{
 	  printf("Error joining thread.\n");
 	  return 1;
 	}
       printf("Producer %i:\t%li\n", i, (intptr_t)status);
+      proResults[i] = (intptr_t)status;
     }
+  // Calculate statistics on the producer threads.
+  float stdDev = std_dev(proResults, proThreadCount);
+  printf("StdDev:\t\t%i\n\n", (int)stdDev);
 
-  printf("\n");
-  for(i = 0; i < conThreadCount; i++)
+  // Store consumer results.
+  int conResults[conThreadCount];
+  // Join the consumer threads.
+  for(i = proThreadCount; i < threadCount; i++)
     {
       void *status;
-      if(pthread_join(conThreads[i], &status))
+      if(pthread_join(threads[i], &status))
 	{
 	  printf("Error joining thread.\n");
 	  return 1;
 	}
       printf("Consumer %i:\t%li\n", i, (intptr_t)status);
+      conResults[i-proThreadCount] = (intptr_t)status;
     }
+  // Calculate statistics on the consumer threads.
+  stdDev = std_dev(conResults, conThreadCount);
+  printf("StdDev:\t\t%i\n", (int)stdDev);
 
+  // Error check that the producer and consumer counts are off by what is still
+  // in the queue. This way we know the queue was not being added
+  // when it was full etc. Should be able to detect most issues with drops/duplicates.
+  int pc = sum_array(proResults, proThreadCount);
+  int cc = sum_array(conResults, conThreadCount);
+  if(abs(pc-cc) != curQueueSize)
+    printf("Producer/Consumer counts are inconsistant with what is in the queue.\n");
+  else
+    printf("Producer/Consumer results are consistant!\n");
+
+  printf("Total items consumed: %i\n", cc);
+
+  // Delete the mutex if used.
+  #ifdef MUTEX
+  pthread_mutex_destroy(&lock);
+  #endif
+  printf("\n");
   return 0;
 }
 
