@@ -1,49 +1,66 @@
-// Jakub Szpunar cs5460 HW3 Problem 1: Single thread bakery algorithm.
+// Jakub Szpunar cs5460 HW3 Problem 6: Create a queue.
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
 #include <time.h>
 
-// pointer to the queue.
+// pointer to the queue
 int* queue;
+// Max size
 static const int MAX_QUEUE_SIZE = 32;
+// Queue positions and size.
 int enqPos;
 int deqPos;
 int curQueueSize;
 
+// Enqueue value into the queue.
+// Return 0 if fail due to full queue, 1 otherwise.
 int enq(int value)
 {
+  // If the queue is full, return so.
   if(curQueueSize >= 32)
     return 0;
   
+  // Insert the value in the next available position for inserting.
   queue[enqPos] = value;
 
+  // Incremement the enqueue position with 
+  // care for going off the end of the queue.
   if(enqPos == MAX_QUEUE_SIZE - 1)
     enqPos = 0;
   else
     enqPos++;
 
+  // Incremement the queue size.
   curQueueSize++;
   return 1;
 }
 
+// Dequeue from the queue.
+// Return 0 if failure do to tempty queue.
+// If success, set *value to be the deqeued value and return 1.
 int deq(int* value)
 {
+  // If the queue is empty.
   if(curQueueSize == 0)
     return 0;
 
+  // Set value.
   (*value) = queue[deqPos];
 
+  // Update next dequeue position.
   if(deqPos == MAX_QUEUE_SIZE - 1)
     deqPos = 0;
   else
     deqPos++;
 
+  // decremement the queue size.
   curQueueSize--;
   return 1;
 }
 
+// Initalize the queue to be considered empty.
 void initialize()
 {
   enqPos = 0;
@@ -52,6 +69,8 @@ void initialize()
   return;
 }
 
+// Test case, fill up the queue and then 
+// remove from the queue checking values.
 int enqFullDeqFull()
 {
   int i;
@@ -71,6 +90,8 @@ int enqFullDeqFull()
   return 1;
 }
 
+// Test case, enqueue, then dequene, repeat many times
+// checking values.
 int enqDeqByOne()
 {
   int i;
@@ -87,6 +108,7 @@ int enqDeqByOne()
   return 1;
 }
 
+// Test case, make sure that the queue cannot be overfilled.
 int enqTooMany()
 {
   int i;
@@ -101,6 +123,7 @@ int enqTooMany()
   return 1;
 }
 
+// Test case, make sure that the queue cannot be overemptied.
 int deqTooMany()
 {
   int i;
@@ -109,6 +132,9 @@ int deqTooMany()
   return 1;
 }
 
+// Complex test case. Compute random data, then write to the queue
+// in variable chunks. Read from the queue in variable chunks.
+// Do so many times.
 int enqDeqVariable()
 {
   int iterations = 15000;
@@ -148,6 +174,8 @@ int enqDeqVariable()
   return 1;
 }
 
+// Test case, fill the queue to full, then try to overfill.
+// Next empty out half, refill to full again, then try to overfill.
 int fillToFullDeqFill()
 {
   int i = 0;
@@ -179,14 +207,18 @@ int fillToFullDeqFill()
   return 1;
 }
 
+// Main, creates the queue, then tests its correctness.
 int main()
 { 
+  // Malloc up the queue size.
   queue = malloc(MAX_QUEUE_SIZE*sizeof(int));
   if(queue == NULL)
     {
       printf("Malloc error.\n");
       return 1;
     }
+  // Initialize the queue and run test cases on it.
+  // Report the outcome of the test case to the user.
   initialize();
   if(!enqFullDeqFull())
     printf("Enque full deque full \tfailed\n");
