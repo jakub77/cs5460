@@ -507,7 +507,7 @@ int main(int argc, char *argv[])
   else
     printf("Producer/Consumer results are consistant!\n");
 
-  printf("Total items consumed: %i\n", cc);
+  printf("Total items consumed/s: %i\n", cc/runTime);
 
   // Delete the mutex if used.
   #ifdef MUTEX
