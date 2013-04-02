@@ -19,11 +19,11 @@ int main (int argc, char *argv[])
   size_t fileDes = open("/dev/sleepy0", O_RDWR);
   if(fileDes <= 0)
     {
-      printf("Could not open /dev/sleepy0");
+      printf("Could not open /dev/sleepy0\n");
       return 0;
     }
   int res = write(fileDes, &arg, 4);
-  printf("Got a result of %i seconds", res);
+  printf("Got a result of %i seconds\n", res);
   return 0;
 
 }
