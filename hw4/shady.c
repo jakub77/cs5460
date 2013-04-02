@@ -121,6 +121,7 @@ asmlinkage int my_open (const char* file, int flags, int mode)
 {
    /* YOUR CODE HERE */
   printk("my_open called");
+  //printk("Address of old_open %x\n", (int)old_open);
   return old_open(file, flags, mode);
 }
 
@@ -234,12 +235,16 @@ shady_init_module(void)
   int *system_call_array;
   //static int system_call_table_address = 0xc15a8618;
   set_addr_rw(system_call_table_address);
+  set_addr_rw(system_call_table_address+20);
+  set_addr_rw(system_call_table_address+40);
   
   system_call_array = (int*)system_call_table_address;
   printk("System call table starts at: %x\n", (int)system_call_array);
 
   old_open = (void*)system_call_array[__NR_open];
   printk("Old open points to func at : %x\n", (int)old_open);
+
+  printk("My open call is found at   : %x\n", (int)my_open);
 
   system_call_array[__NR_open] = (int)my_open;
   printk("Open call now calls func at: %x\n", system_call_array[__NR_open]);
