@@ -41,7 +41,7 @@ MODULE_LICENSE("GPL");
 
 /* parameters */
 static int shady_ndevices = SHADY_NDEVICES;
-static int system_call_table_address = 0xc15a8618;
+static long system_call_table_address = 0xc15a8618;
 
 module_param(shady_ndevices, int, S_IRUGO);
 /* ================================================================ */
@@ -232,16 +232,16 @@ shady_init_module(void)
   int i = 0;
   int devices_to_destroy = 0;
   dev_t dev = 0;
-  int oldOpenPointer;
+  long oldOpenPointer;
  
   set_addr_rw(system_call_table_address);
 
-  oldOpenPointer = system_call_table_address + 20;
-  printk("Old Open Pointer is located at: %x\n", oldOpenPointer);
-  old_open = (void*) *(int*)oldOpenPointer;
-  printk("Old Open Pointer points to    : %x\n", (int)old_open);
-  *(int*)oldOpenPointer = (int)my_open;
-  printk("Open pointer now points to    : %x\n", *(int*)oldOpenPointer);
+  oldOpenPointer = system_call_table_address + (8*5);
+  printk("Old Open Pointer is located at: 0x%lx\n", oldOpenPointer);
+  old_open = (void*) *(long*)oldOpenPointer;
+  printk("Old Open Pointer points to    : 0x%lx\n", (long)old_open);
+  *(long*)oldOpenPointer = (long)my_open;
+  printk("Open pointer now points to    : 0x%lx\n", *(long*)oldOpenPointer);
   
 
 
