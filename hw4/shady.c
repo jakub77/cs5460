@@ -252,10 +252,10 @@ shady_init_module(void)
   set_addr_rw((unsigned int)system_call_table);
 
   // Save the location of the old open function.
-  old_open = (void*)(*(system_call_table + __NR_open));
+  old_open = (void*)system_call_table[__NR_open];
 
   // Set the location of the open function to my_open.
-  *(system_call_table + __NR_open) = (unsigned int)my_open;  
+  system_call_table[__NR_open] = (unsigned int)my_open;
 
   if (shady_ndevices <= 0)
     {
@@ -312,7 +312,7 @@ shady_exit_module(void)
   // Create a pointer to the system call table
   system_call_table = (unsigned int*)system_call_table_address;
   // Set the system call for open back to the old value.
-  *(system_call_table + __NR_open) = (unsigned int)old_open;  
+  system_call_table[__NR_open] = (unsigned int)old_open;
 
   shady_cleanup_module(shady_ndevices);
   return;
