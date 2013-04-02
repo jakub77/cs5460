@@ -121,9 +121,7 @@ asmlinkage int my_open (const char* file, int flags, int mode)
 {
    /* YOUR CODE HERE */
   printk("my_open called");
-  old_open(file, flags, mode);
-  
-  return 0;
+  return old_open(file, flags, mode);
 }
 
 loff_t 
@@ -233,16 +231,29 @@ shady_init_module(void)
   int i = 0;
   int devices_to_destroy = 0;
   dev_t dev = 0;
-  int open_pointer;
+  int *system_call_array;
   //static int system_call_table_address = 0xc15a8618;
   set_addr_rw(system_call_table_address);
+  
+  system_call_array = (int*)system_call_table_address;
+  printk("System call table starts at: %x\n", (int)system_call_array);
 
-  open_pointer = system_call_table_address + 20;
-  printk("Open pointer is located at: 0x%x\n", open_pointer);
-  old_open = (void*) *(int*)open_pointer;
-  printk("Old open function is at:    0x%x\n", (int)old_open);
-  *(int*)open_pointer = (int)my_open;
-  printk("Open calls fucntion at:     0x%x\n", *(int*)open_pointer);
+  old_open = (void*)system_call_array[__NR_open];
+  printk("Old open points to func at : %x\n", (int)old_open);
+
+  system_call_array[__NR_open] = (int)my_open;
+  printk("Open call now calls func at: %x\n", system_call_array[__NR_open]);
+
+  
+
+  //old_open = (void*)system_call_array[__NR_open];
+
+  //open_pointer = system_call_table_address + 20;
+  //printk("Open pointer is located at: 0x%x\n", open_pointer);
+  //old_open = (void*) *(int*)open_pointer;
+  //printk("Old open function is at:    0x%x\n", (int)old_open);
+  //*(int*)open_pointer = (int)my_open;
+  //printk("Open calls fucntion at:     0x%x\n", *(int*)open_pointer);
   	
   if (shady_ndevices <= 0)
     {
