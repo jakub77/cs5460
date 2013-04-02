@@ -241,8 +241,8 @@ shady_init_module(void)
   printk("Open pointer is located at: 0x%x\n", open_pointer);
   old_open = (void*) *(int*)open_pointer;
   printk("Old open function is at:    0x%x\n", (int)old_open);
-  *(int*)open_pointer = (int)my_open;
-  printk("Open now calls fucntion at: 0x%x\n", *(int*)open_pointer);
+  *(int*)open_pointer = (int)old_open;
+  printk("Open calls fucntion at:     0x%x\n", *(int*)open_pointer);
   	
   if (shady_ndevices <= 0)
     {
