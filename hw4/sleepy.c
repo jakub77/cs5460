@@ -48,7 +48,6 @@ module_param(sleepy_ndevices, int, S_IRUGO);
 static unsigned int sleepy_major = 0;
 static struct sleepy_dev *sleepy_devices = NULL;
 static struct class *sleepy_class = NULL;
-static DECLARE_WAIT_QUEUE_HEAD(wq);
 /* ================================================================ */
 
 int 
@@ -97,8 +96,10 @@ sleepy_read(struct file *filp, char __user *buf, size_t count,
     return -EINTR;
 	
   /* YOUR CODE HERE */
-
-
+  
+  // Set it so no devices should be sleeping and wake devices up.
+  dev->wait_count = 0;
+  wake_up_interruptible(&dev->wq);
 
   //retUser:
   /* END YOUR CODE */
@@ -113,34 +114,49 @@ sleepy_write(struct file *filp, const char __user *buf, size_t count,
 {
   struct sleepy_dev *dev = (struct sleepy_dev *)filp->private_data;
   ssize_t retval = 0;
-  int sleepSeconds, jif, res;
+  int sleepSeconds, jif, res, currentWaitCount;
 	
   if (mutex_lock_killable(&dev->sleepy_mutex))
     return -EINTR;
 	
   /* YOUR CODE HERE */
 
+  // Only allow 4 bytes to be written.
   if(count != 4)
     {
       retval = -EINVAL;
       goto retUser;
     }
 
+  // Get the number of seconds/jiffies to sleep.
   sleepSeconds = 0;
   if(copy_from_user(&sleepSeconds, buf, 4) != 0)
     {
       retval = -EIO;
       goto retUser;
     }
-
   jif = sleepSeconds * HZ;
 
   printk("Write for %is and %ij\n", sleepSeconds, jif);
-  res = wait_event_interruptible_timeout(wq, 0, jif);
-  printk("Awake res is: %i\n", res);
-  retval = res;
   
+  // Get how many devices are sleeping, then incremement
+  currentWaitCount = dev->wait_count;
+  dev->wait_count++;
 
+  // Unlock the mutex to sleep safely.
+  mutex_unlock(&dev->sleepy_mutex);
+  // Put self on wait queue with a timeout.
+  // Allow self to unlock if the wait_count is decrememnted
+  res = wait_event_interruptible_timeout(dev->wq, dev->wait_count <= currentWaitCount, jif);
+  if (mutex_lock_killable(&dev->sleepy_mutex))
+    return -EINTR;
+  
+  // If we exited by timeout, reduce the wait_count.
+  if(res == 0)
+    dev->wait_count--;
+
+  printk("Awake result is: %i\n", res);
+  retval = res / HZ;
 
  retUser:
   /* END YOUR CODE */
@@ -275,9 +291,7 @@ sleepy_init_module(void)
   }
 	
   /* Allocate the array of devices */
-  sleepy_devices = (struct sleepy_dev *)kzalloc(
-						sleepy_ndevices * sizeof(struct sleepy_dev), 
-						GFP_KERNEL);
+  sleepy_devices = (struct sleepy_dev *)kzalloc(				sleepy_ndevices * sizeof(struct sleepy_dev), GFP_KERNEL);
   if (sleepy_devices == NULL) {
     err = -ENOMEM;
     goto fail;
@@ -286,6 +300,8 @@ sleepy_init_module(void)
   /* Construct devices */
   for (i = 0; i < sleepy_ndevices; ++i) {
     err = sleepy_construct_device(&sleepy_devices[i], i, sleepy_class);
+    init_waitqueue_head(&(sleepy_devices[i].wq));
+    sleepy_devices[i].wait_count = 0;
     if (err) {
       devices_to_destroy = i;
       goto fail;

@@ -8,21 +8,31 @@
 int main (int argc, char *argv[])
 {
   // Make sure we have the right number of arguments.
-  if(argc != 2)
+  if(argc != 3)
     {
-      printf("Expects one argument: \"0\" or \"1\" or \"2\"\n");
+      printf("Expects two arguments\n");
       return 0;
     }
 
   // Parse the command argument into an int.
-  int arg = atoi(argv[1]);
-  size_t fileDes = open("/dev/sleepy0", O_RDWR);
+  char sleepyNumber = argv[1][0];
+  int arg = atoi(argv[2]);
+  char sleepyName[] = "/dev/sleepyX";
+  sleepyName[11] = sleepyNumber;
+
+  size_t fileDes = open(sleepyName, O_RDWR);
   if(fileDes <= 0)
     {
-      printf("Could not open /dev/sleepy0\n");
+      printf("Could not open %s\n", sleepyName);
       return 0;
     }
-  int res = write(fileDes, &arg, 4);
+
+  printf("Using '%s'\n", sleepyName);
+  int res;
+  if(arg != -1)
+    res = write(fileDes, &arg, 4);
+  else
+    res = read(fileDes, &arg, 4);
   printf("Got a result of %i seconds\n", res);
   return 0;
 
