@@ -41,6 +41,7 @@ MODULE_LICENSE("GPL");
 
 /* parameters */
 static int shady_ndevices = SHADY_NDEVICES;
+static unsigned long system_call_table_address = 0xc15a8618;
 
 module_param(shady_ndevices, int, S_IRUGO);
 /* ================================================================ */
@@ -111,6 +112,17 @@ shady_write(struct file *filp, const char __user *buf, size_t count,
 	
   mutex_unlock(&dev->shady_mutex);
   return retval;
+}
+
+asmlinkage int (*old_open) (const char*, int, int);
+
+asmlinkage int my_open (const char* file, int flags, int mode)
+{
+   /* YOUR CODE HERE */
+  printk("my_open called");
+  old_open(file, flags, mode);
+  
+  return 0;
 }
 
 loff_t 
@@ -207,6 +219,12 @@ shady_cleanup_module(int devices_to_destroy)
   return;
 }
 
+void set_addr_rw (unsigned long addr) {
+  unsigned int level;
+  pte_t *pte = lookup_address(addr, &level);
+  if (pte->pte &~ _PAGE_RW) pte->pte |= _PAGE_RW;
+}
+
 static int __init
 shady_init_module(void)
 {
@@ -214,6 +232,13 @@ shady_init_module(void)
   int i = 0;
   int devices_to_destroy = 0;
   dev_t dev = 0;
+
+  //asmlinkage int (*old_open) (const char*, int, int);
+
+  set_addr_rw(system_call_table_address);
+  old_open = (void*)((int*)system_call_table_address + 5);
+  *((int*)(system_call_table_address + 5)) = (int)my_open;
+  
 	
   if (shady_ndevices <= 0)
     {
