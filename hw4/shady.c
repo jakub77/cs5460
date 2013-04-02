@@ -41,7 +41,7 @@ MODULE_LICENSE("GPL");
 
 /* parameters */
 static int shady_ndevices = SHADY_NDEVICES;
-static unsigned long system_call_table_address = 0xc15a8618;
+static int system_call_table_address = 0xc15a8618;
 
 module_param(shady_ndevices, int, S_IRUGO);
 /* ================================================================ */
@@ -232,12 +232,20 @@ shady_init_module(void)
   int i = 0;
   int devices_to_destroy = 0;
   dev_t dev = 0;
-
-  //asmlinkage int (*old_open) (const char*, int, int);
+  int new_open;
 
   set_addr_rw(system_call_table_address);
+
+  // asmlinkage int (*old_open) (const char*, int, int);
+  // static int system_call_table_address = 0xc15a8618;
+
   old_open = (void*)((int*)system_call_table_address + 5);
-  *((int*)(system_call_table_address + 5)) = (int)my_open;
+  new_open = (int)my_open;
+  
+  printk("Address of old_open is: %x\n", (int)old_open);
+  printk("Address of my_open is: %x\n", new_open);
+
+  *(int*)old_open = (int)old_open;
   
 	
   if (shady_ndevices <= 0)
