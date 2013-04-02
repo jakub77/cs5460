@@ -1,3 +1,6 @@
+// Jakub Szpunar CS5460 HW4 sleepy.c Modified code in construct device, write and read.
+// sleepy.h also slightly modified
+
 /* cfake.c - implementation of a simple module for a character device 
  * can be used for testing, demonstrations, etc.
  */
@@ -97,11 +100,19 @@ sleepy_read(struct file *filp, char __user *buf, size_t count,
 	
   /* YOUR CODE HERE */
   
-  // Set it so no devices should be sleeping and wake devices up.
-  dev->wait_count = 0;
-  wake_up_interruptible(&dev->wq);
+  // If there are any devices currently waiting to timeout/be awoken, start awaking them.
+  if(dev->wait_count != 0)
+    {
+      // Lock a mutex that will only unlock when the last device
+      // wakes up.
+      if(mutex_lock_killable(&dev->unlock_finish))
+	return -EINTR;
+      // Set there to be 0 devices waiting to wake up.
+      dev->wait_count = 0;
+      // Wake up all devices on the wait queue.
+      wake_up_interruptible(&dev->wq);
+    }
 
-  //retUser:
   /* END YOUR CODE */
   
   mutex_unlock(&dev->sleepy_mutex);
@@ -115,11 +126,17 @@ sleepy_write(struct file *filp, const char __user *buf, size_t count,
   struct sleepy_dev *dev = (struct sleepy_dev *)filp->private_data;
   ssize_t retval = 0;
   int sleepSeconds, jif, res, currentWaitCount;
-	
-  if (mutex_lock_killable(&dev->sleepy_mutex))
+    
+  if(mutex_lock_killable(&dev->sleepy_mutex))
     return -EINTR;
-	
+
   /* YOUR CODE HERE */
+  
+  // Try to get the mutex for allowing writes to occur.
+  if(mutex_lock_killable(&dev->unlock_finish))
+    return -EINTR;
+  // If it's getable, unlock it right away.
+  mutex_unlock(&dev->unlock_finish);
 
   // Only allow 4 bytes to be written.
   if(count != 4)
@@ -137,25 +154,35 @@ sleepy_write(struct file *filp, const char __user *buf, size_t count,
     }
   jif = sleepSeconds * HZ;
 
-  printk("Write for %is and %ij\n", sleepSeconds, jif);
+  //printk("Write for %is and %ij\n", sleepSeconds, jif);
   
   // Get how many devices are sleeping, then incremement
   currentWaitCount = dev->wait_count;
   dev->wait_count++;
 
-  // Unlock the mutex to sleep safely.
+  // Unlock the mutex to allow others to access it.
   mutex_unlock(&dev->sleepy_mutex);
   // Put self on wait queue with a timeout.
-  // Allow self to unlock if the wait_count is decrememnted
+  // Allow self to unlock if the wait_count is ever less than it was.
   res = wait_event_interruptible_timeout(dev->wq, dev->wait_count <= currentWaitCount, jif);
+  // Now that we are awake, get the mutex right away.
   if (mutex_lock_killable(&dev->sleepy_mutex))
     return -EINTR;
   
   // If we exited by timeout, reduce the wait_count.
   if(res == 0)
-    dev->wait_count--;
+    {
+      dev->wait_count--;
+    }
+  // Otherwise, we were woken up, if we are the last to wake up, unlock
+  // the mutex that disallows writes to occur when things are still waking up.
+  else
+    {
+      if(dev->wait_count == 0)
+	mutex_unlock(&dev->unlock_finish);
+    }
 
-  printk("Awake result is: %i\n", res);
+  //printk("Awake result is: %i\n", res);
   retval = res / HZ;
 
  retUser:
@@ -198,7 +225,12 @@ sleepy_construct_device(struct sleepy_dev *dev, int minor,
   /* Memory is to be allocated when the device is opened the first time */
   dev->data = NULL;     
   mutex_init(&dev->sleepy_mutex);
-    
+
+  // ADDED CODE TO FINISH INIT OF DEV
+  mutex_init(&dev->unlock_finish); 
+  init_waitqueue_head(&dev->wq);
+  dev->wait_count = 0;
+
   cdev_init(&dev->cdev, &sleepy_fops);
   dev->cdev.owner = THIS_MODULE;
     
@@ -300,8 +332,6 @@ sleepy_init_module(void)
   /* Construct devices */
   for (i = 0; i < sleepy_ndevices; ++i) {
     err = sleepy_construct_device(&sleepy_devices[i], i, sleepy_class);
-    init_waitqueue_head(&(sleepy_devices[i].wq));
-    sleepy_devices[i].wait_count = 0;
     if (err) {
       devices_to_destroy = i;
       goto fail;

