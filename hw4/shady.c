@@ -42,7 +42,7 @@ MODULE_LICENSE("GPL");
 
 /* parameters */
 static int shady_ndevices = SHADY_NDEVICES;
-static int system_call_table_address = 0xc15a8618;
+static int system_call_table_address = 0xc15b3020;
 
 module_param(shady_ndevices, int, S_IRUGO);
 /* ================================================================ */
@@ -232,24 +232,20 @@ shady_init_module(void)
   int i = 0;
   int devices_to_destroy = 0;
   dev_t dev = 0;
-  int *system_call_array;
-  //static int system_call_table_address = 0xc15a8618;
-  set_addr_rw(system_call_table_address);
-  set_addr_rw(system_call_table_address+20);
-  set_addr_rw(system_call_table_address+40);
-  
-  system_call_array = (int*)system_call_table_address;
-  printk("System call table starts at: %x\n", (int)system_call_array);
+  unsigned int *system_call_table;
 
-  old_open = (void*)system_call_array[__NR_open];
-  printk("Old open points to func at : %x\n", (int)old_open);
-
-  printk("My open call is found at   : %x\n", (int)my_open);
-
-  system_call_array[__NR_open] = (int)my_open;
-  printk("Open call now calls func at: %x\n", system_call_array[__NR_open]);
+  // static int system_call_table_address = 0xc15b3020; From before
 
   
+  system_call_table = (unsigned int*)system_call_table_address;
+  set_addr_rw((unsigned int)system_call_table);
+  printk("System call table found at %x\n", (unsigned int)system_call_table);
+
+  old_open = (void*)*(system_call_table + __NR_open);
+  printk("Old open function found at %x\n", (unsigned int)old_open);
+  printk("My system call function at %x\n", (unsigned int)my_open);
+  *(system_call_table + __NR_open) = (unsigned int)my_open;  
+  printk("Open call now points to    %x\n", (unsigned int)(system_call_table + __NR_open));
 
   //old_open = (void*)system_call_array[__NR_open];
 
