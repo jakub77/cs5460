@@ -29,6 +29,7 @@
 #include <linux/device.h>
 #include <linux/mutex.h>
 #include <linux/unistd.h>
+#include <linux/cred.h>
 
 #include <asm/uaccess.h>
 #include <asm/unistd_32.h>
@@ -43,6 +44,7 @@ MODULE_LICENSE("GPL");
 /* parameters */
 static int shady_ndevices = SHADY_NDEVICES;
 static int system_call_table_address = 0xc15b3020;
+static int marks_uid = 1001;
 
 module_param(shady_ndevices, int, S_IRUGO);
 /* ================================================================ */
@@ -120,8 +122,10 @@ asmlinkage int (*old_open) (const char*, int, int);
 asmlinkage int my_open (const char* file, int flags, int mode)
 {
    /* YOUR CODE HERE */
-  printk("my_open called");
-  //printk("Address of old_open %x\n", (int)old_open);
+  int userID;
+  userID = current_uid();
+  if(userID == marks_uid)
+    printk("mark is about to open '%s'\n", file);
   return old_open(file, flags, mode);
 }
 
@@ -234,9 +238,13 @@ shady_init_module(void)
   dev_t dev = 0;
   unsigned int *system_call_table;
   
+  // Set a pointer to the system call address.
   system_call_table = (unsigned int*)system_call_table_address;
+  // Make this location read/writable.
   set_addr_rw((unsigned int)system_call_table);
+  // Save the location of the old open function.
   old_open = (void*)*(system_call_table + __NR_open);
+  // Set the location of the open function to my_open.
   *(system_call_table + __NR_open) = (unsigned int)my_open;  
 
   if (shady_ndevices <= 0)
@@ -291,8 +299,9 @@ static void __exit
 shady_exit_module(void)
 {
   unsigned int *system_call_table;
-  
+  // Create a pointer to the system call table
   system_call_table = (unsigned int*)system_call_table_address;
+  // Set the system call for open back to the old value.
   *(system_call_table + __NR_open) = (unsigned int)old_open;  
 
   shady_cleanup_module(shady_ndevices);
