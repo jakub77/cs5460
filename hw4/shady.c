@@ -1,3 +1,7 @@
+// Jakub Szpunar CS5460 HW4 shady.c
+// Modified code exists in __init, __exit, my_open and old_open
+
+
 /* cfake.c - implementation of a simple module for a character device 
  * can be used for testing, demonstrations, etc.
  */
@@ -117,11 +121,14 @@ shady_write(struct file *filp, const char __user *buf, size_t count,
   return retval;
 }
 
+// Store a pointer to the old open function.
 asmlinkage int (*old_open) (const char*, int, int);
 
+// A new open function that calls the old open function.
+// In adition, if the user opening a file is mark, a kernel
+// Message describing what is being opened is printed.
 asmlinkage int my_open (const char* file, int flags, int mode)
 {
-   /* YOUR CODE HERE */
   int userID;
   userID = current_uid();
   if(userID == marks_uid)
@@ -236,14 +243,17 @@ shady_init_module(void)
   int i = 0;
   int devices_to_destroy = 0;
   dev_t dev = 0;
-  unsigned int *system_call_table;
-  
+
   // Set a pointer to the system call address.
+  unsigned int *system_call_table;
   system_call_table = (unsigned int*)system_call_table_address;
+
   // Make this location read/writable.
   set_addr_rw((unsigned int)system_call_table);
+
   // Save the location of the old open function.
-  old_open = (void*)*(system_call_table + __NR_open);
+  old_open = (void*)(*(system_call_table + __NR_open));
+
   // Set the location of the open function to my_open.
   *(system_call_table + __NR_open) = (unsigned int)my_open;  
 
