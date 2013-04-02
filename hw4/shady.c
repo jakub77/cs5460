@@ -31,6 +31,7 @@
 #include <linux/unistd.h>
 
 #include <asm/uaccess.h>
+#include <asm/unistd_32.h>
 
 #include "shady.h"
 
@@ -41,7 +42,7 @@ MODULE_LICENSE("GPL");
 
 /* parameters */
 static int shady_ndevices = SHADY_NDEVICES;
-static long system_call_table_address = 0xc15a8618;
+static int system_call_table_address = 0xc15a8618;
 
 module_param(shady_ndevices, int, S_IRUGO);
 /* ================================================================ */
@@ -232,16 +233,16 @@ shady_init_module(void)
   int i = 0;
   int devices_to_destroy = 0;
   dev_t dev = 0;
-  long oldOpenPointer;
- 
+  int open_pointer;
+  //static int system_call_table_address = 0xc15a8618;
   set_addr_rw(system_call_table_address);
 
-  oldOpenPointer = system_call_table_address + (8*5);
-  printk("Old Open Pointer is located at: 0x%lx\n", oldOpenPointer);
-  old_open = (void*) *(long*)oldOpenPointer;
-  printk("Old Open Pointer points to    : 0x%lx\n", (long)old_open);
-  *(long*)oldOpenPointer = (long)my_open;
-  printk("Open pointer now points to    : 0x%lx\n", *(long*)oldOpenPointer);
+  open_pointer = system_call_table_address + 24;
+  printk("Open pointer is located at: 0x%x\n", open_pointer);
+  old_open = (void*) *(int*)open_pointer;
+  printk("Old open function is at:    0x%x\n", (int)old_open);
+  *(int*)open_pointer = (int)my_open;
+  printk("Open now calls fucntion at: 0x%x\n", *(int*)oldOpenPointer);
   
 
 
