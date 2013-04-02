@@ -28,7 +28,8 @@
 #include <linux/device.h>
 #include <linux/mutex.h>
 #include <linux/jiffies.h>
-
+#include <linux/wait.h>
+#include <linux/sched.h>
 #include <asm/uaccess.h>
 
 #include "sleepy.h"
@@ -47,6 +48,7 @@ module_param(sleepy_ndevices, int, S_IRUGO);
 static unsigned int sleepy_major = 0;
 static struct sleepy_dev *sleepy_devices = NULL;
 static struct class *sleepy_class = NULL;
+static DECLARE_WAIT_QUEUE_HEAD(wq);
 /* ================================================================ */
 
 int 
@@ -111,7 +113,7 @@ sleepy_write(struct file *filp, const char __user *buf, size_t count,
 {
   struct sleepy_dev *dev = (struct sleepy_dev *)filp->private_data;
   ssize_t retval = 0;
-  int sleepSeconds;
+  int sleepSeconds, jif, res;
 	
   if (mutex_lock_killable(&dev->sleepy_mutex))
     return -EINTR;
@@ -131,7 +133,13 @@ sleepy_write(struct file *filp, const char __user *buf, size_t count,
       goto retUser;
     }
 
-  printk("Got a value of %i!", sleepSeconds);
+  jif = sleepSeconds * HZ;
+
+  printk("Write for %is and %ij\n", sleepSeconds, jif);
+  res = wait_event_interruptible_timeout(wq, 0, jif);
+  printk("Awake res is: %i\n", res);
+  retval = res;
+  
 
 
  retUser:
