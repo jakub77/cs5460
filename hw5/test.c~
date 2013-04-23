@@ -1,0 +1,18 @@
+int main(int argc, char* argv[])
+{
+  return 0;
+}
+
+int get_ext_pos(int x)
+{
+  return 0;
+}
+
+int get_ext_count(int x)
+{
+  return 0;
+}
+int set_ext(int pos, int count)
+{
+  return 0;
+}

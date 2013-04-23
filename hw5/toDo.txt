@@ -1,0 +1,13 @@
+Work in itree_common.c
+get_block()
+uses map_bh()
+minix_new_block adds blocks 
+
+blocks()
+truncate()
+minix_free_block removes blocks.
+
+I_data() gets the list of block number. If zero, free block?
+
+
+minix_fs.h has the definition of minix2_inode.

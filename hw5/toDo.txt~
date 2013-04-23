@@ -1,0 +1,3 @@
+itree_common.c - has get_block, truncate
+minix_fs.h has the definition of minix2_inode.
+bitmap.c has minix_new_block, seems to add blocks to inode.
