@@ -171,6 +171,8 @@ changed:
 static inline int get_block(struct inode * inode, sector_t block,
 			struct buffer_head *bh, int create)
 {
+  printk("In get_block__________\n");
+  
   int err = -EIO;
 
   // Get the zones, know we have up to 10 extents in all.
@@ -178,105 +180,168 @@ static inline int get_block(struct inode * inode, sector_t block,
   block_t cur_ext;
   int ext_idx = 0;
   int ext_cnt = 0;
+  int ext_pos = 0;
   int blk_cnt = 0;
   block_t blk_pos = 0;
   
 
-  while(ext_idx < 10)
+  while(1)
     {
+      // If we ran out of extents, we are done.
+      if(ext_idx == 10)
+	goto done;
+      
       // Get the extent at this index.
       cur_ext = idata[ext_idx];
-      // Get the extent length here.
+      printk("cur_ext at %i: %i\n", ext_idx, cur_ext);
+      
+      // Get this extent's position, and the number
+      // of blocks associated with this extent.
+      ext_pos = get_ext_pos(cur_ext);
       ext_cnt = get_ext_cnt(cur_ext);
+
       // If this extent holds no blocks, we won't find our block.
       if(ext_cnt == 0)
-	goto no_blk;
+	goto add_blocks;
+      
+      if(block < blk_cnt + ext_cnt)
+	{
+	  // In this case, the block is found in this extent.
+	  // Compute the blocks address based on extent's address + offset.
+	  blk_pos = ext_pos + (block - blk_cnt);
+
+	  // Map the block into the buffer cache and goto done w/o error.
+	  map_bh(bh, inode->i_sb, block_to_cpu(blk_pos));
+	  err = 0;
+	  goto done;
+	}
+      
       // Add the number of blocks from this extent to our running
       // count of which blocks we have seen.
       blk_cnt += ext_cnt;
-      if(block <= blk_cnt)
+      ext_idx++;
+    }
+  
+ add_blocks:
+  // Determine which extent to add to, see if we can add to the previous one.
+  // Determine whether this block was empty.
+  if(ext_cnt == 0)
+    {
+      // If it was, check to see if there is a previous block to add to.
+      if(ext_idx > 0)
 	{
-	  // The block we want was contained in this extent.
-	  blk_pos = get_ext_pos(cur_ext) + ((ext_cnt - 1)*1024);
-	  //map_bh(bh, inode->i_sb, block_to_cpu(blk_pos));
+	  // Check to see if this previous block has room.
+	  if(get_ext_cnt(idata[ext_idx - 1]) < 255)
+	    {
+	      // If it did have room, change our extent to add to it.
+	      ext_idx--;
+	      cur_ext = idata[ext_idx];
+	      ext_pos = get_ext_pos(cur_ext);
+	      ext_cnt = get_ext_cnt(cur_ext);
+	    }
+	}
+    }
+
+  // We have the extent to add to, now add to it.
+  int nr;
+
+  
+  while(blk_cnt < block)
+    {
+      // Allocate a new block, check for errors.
+      nr = minix_new_block(inode);
+      if (!nr)
+	{
+	  err = -EIO;
+	  goto done;
+	}
+      if(nr == (ext_pos + ext_cnt))
+	{
+	  // We have a contiguous block.
+	  cur_ext = set_ext(ext_pos, ++ext_cnt);
+	  blk_cnt++;
+	  continue;
+	}
+      // Check to see if we can allocate a new extent.
+      if(ext_idx == 9)
+	{
+	  // We can't create a new extent, file too large.
+	  err = -EIO;
 	  goto done;
 	}
       ext_idx++;
+      cur_ext = set_ext(nr, 1);
+      ext_pos = nr;
+      ext_cnt = 1;
+      blk_cnt++;
+      idata[ext_idx] = cur_ext;
     }
 
-
- no_blk:
-
+  blk_pos = ext_pos + (block - blk_cnt);
+  map_bh(bh, inode->i_sb, block_to_cpu(blk_pos));
+  
  done:
+  return err;
+  
+  
+/*  	err = -EIO; */
+/* 	int offsets[DEPTH]; */
+/* 	Indirect chain[DEPTH]; */
+/* 	Indirect *partial; */
+/* 	int left; */
+/* 	int depth = block_to_path(inode, block, offsets); */
 
+/* 	if (depth == 0) */
+/* 		goto out; */
 
-  // Loop through the blocks in the inode until we either get
-  // to the block we want, or we find the requested block
-  // doesn't exist.  
+/* reread: */
+/* 	partial = get_branch(inode, depth, offsets, chain, &err); */
 
-  // If the block did not exist, create blocks, (and extents)
-  // until we get to the right position.
+/* 	/\* Simplest case - block found, no allocation needed *\/ */
+/* 	if (!partial) { */
+/* got_it: */
+/* 		map_bh(bh, inode->i_sb, block_to_cpu(chain[depth-1].key)); */
+/* 		/\* Clean up and exit *\/ */
+/* 		partial = chain+depth-1; /\* the whole chain *\/ */
+/* 		goto cleanup; */
+/* 	} */
 
-  // Map the block into the buffer cache.
+/* 	/\* Next simple case - plain lookup or failed read of indirect block *\/ */
+/* 	if (!create || err == -EIO) { */
+/* cleanup: */
+/* 		while (partial > chain) { */
+/* 			brelse(partial->bh); */
+/* 			partial--; */
+/* 		} */
+/* out: */
+/* 		return err; */
+/* 	} */
 
-	err = -EIO;
-	int offsets[DEPTH];
-	Indirect chain[DEPTH];
-	Indirect *partial;
-	int left;
-	int depth = block_to_path(inode, block, offsets);
+/* 	/\* */
+/* 	 * Indirect block might be removed by truncate while we were */
+/* 	 * reading it. Handling of that case (forget what we've got and */
+/* 	 * reread) is taken out of the main path. */
+/* 	 *\/ */
+/* 	if (err == -EAGAIN) */
+/* 		goto changed; */
 
-	if (depth == 0)
-		goto out;
+/* 	left = (chain + depth) - partial; */
+/* 	err = alloc_branch(inode, left, offsets+(partial-chain), partial); */
+/* 	if (err) */
+/* 		goto cleanup; */
 
-reread:
-	partial = get_branch(inode, depth, offsets, chain, &err);
+/* 	if (splice_branch(inode, chain, partial, left) < 0) */
+/* 		goto changed; */
 
-	/* Simplest case - block found, no allocation needed */
-	if (!partial) {
-got_it:
-		map_bh(bh, inode->i_sb, block_to_cpu(chain[depth-1].key));
-		/* Clean up and exit */
-		partial = chain+depth-1; /* the whole chain */
-		goto cleanup;
-	}
+/* 	set_buffer_new(bh); */
+/* 	goto got_it; */
 
-	/* Next simple case - plain lookup or failed read of indirect block */
-	if (!create || err == -EIO) {
-cleanup:
-		while (partial > chain) {
-			brelse(partial->bh);
-			partial--;
-		}
-out:
-		return err;
-	}
-
-	/*
-	 * Indirect block might be removed by truncate while we were
-	 * reading it. Handling of that case (forget what we've got and
-	 * reread) is taken out of the main path.
-	 */
-	if (err == -EAGAIN)
-		goto changed;
-
-	left = (chain + depth) - partial;
-	err = alloc_branch(inode, left, offsets+(partial-chain), partial);
-	if (err)
-		goto cleanup;
-
-	if (splice_branch(inode, chain, partial, left) < 0)
-		goto changed;
-
-	set_buffer_new(bh);
-	goto got_it;
-
-changed:
-	while (partial > chain) {
-		brelse(partial->bh);
-		partial--;
-	}
-	goto reread;
+/* changed: */
+/* 	while (partial > chain) { */
+/* 		brelse(partial->bh); */
+/* 		partial--; */
+/* 	} */
+/* 	goto reread; */
 }
 
 static inline int all_zeroes(block_t *p, block_t *q)
