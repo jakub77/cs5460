@@ -171,7 +171,7 @@ changed:
 static inline int get_block(struct inode * inode, sector_t block,
 			struct buffer_head *bh, int create)
 {
-  printk("In get_block__________\n");
+  printk("________In get_block__________ block: %i, create %i\n", (int)block, create);
   
   int err = -EIO;
 
@@ -189,27 +189,34 @@ static inline int get_block(struct inode * inode, sector_t block,
     {
       // If we ran out of extents, we are done.
       if(ext_idx == 10)
+	{
+	  printk("Ran out of extents.\n");
 	goto done;
+	}
       
       // Get the extent at this index.
       cur_ext = idata[ext_idx];
-      printk("cur_ext at %i: %i\n", ext_idx, cur_ext);
+      printk("cur_ext at index %i: %i\n", ext_idx, cur_ext);
       
       // Get this extent's position, and the number
       // of blocks associated with this extent.
       ext_pos = get_ext_pos(cur_ext);
       ext_cnt = get_ext_cnt(cur_ext);
+      printk("Ext pos: %i, count: %i\n", ext_pos, ext_cnt);
 
       // If this extent holds no blocks, we won't find our block.
       if(ext_cnt == 0)
-	goto add_blocks;
+	{
+	  printk("Ext holds no blocks, let's goto add blocks.\n");
+	  goto add_blocks;
+	}
       
       if(block < blk_cnt + ext_cnt)
 	{
 	  // In this case, the block is found in this extent.
 	  // Compute the blocks address based on extent's address + offset.
 	  blk_pos = ext_pos + (block - blk_cnt);
-
+	  printk("Block should lie in this extent, determined blk_pos to be %i\n", blk_pos);
 	  // Map the block into the buffer cache and goto done w/o error.
 	  map_bh(bh, inode->i_sb, block_to_cpu(blk_pos));
 	  err = 0;
@@ -220,43 +227,65 @@ static inline int get_block(struct inode * inode, sector_t block,
       // count of which blocks we have seen.
       blk_cnt += ext_cnt;
       ext_idx++;
+      printk("First loop done, index: %i, blk_cnt: %i\n", blk_cnt, ext_idx);
     }
   
  add_blocks:
+  printk("______Now at add blocks______\n");
   // Determine which extent to add to, see if we can add to the previous one.
   // Determine whether this block was empty.
   if(ext_cnt == 0)
     {
+      printk("Determined ext_cnt to be zero\n");
       // If it was, check to see if there is a previous block to add to.
       if(ext_idx > 0)
 	{
+	  printk("Determined ext_idx to be > 0: %i\n", ext_idx);
 	  // Check to see if this previous block has room.
 	  if(get_ext_cnt(idata[ext_idx - 1]) < 255)
 	    {
+	      printk("Determined cnt to be < 255: %i\n",get_ext_cnt(idata[ext_idx - 1]));
 	      // If it did have room, change our extent to add to it.
 	      ext_idx--;
 	      cur_ext = idata[ext_idx];
 	      ext_pos = get_ext_pos(cur_ext);
 	      ext_cnt = get_ext_cnt(cur_ext);
+	      printk("New ext idx: %i, pos: %i, cnt: %i\n", ext_idx, ext_pos, ext_cnt);
 	    }
 	}
     }
 
   // We have the extent to add to, now add to it.
   int nr;
-
+  int count = 0;
   
-  while(blk_cnt < block)
+  while(1)
     {
+      printk("Checking to break: %i, %i\n", blk_cnt, (int)block);
+      if(blk_cnt == block + 1)
+	{
+	  printk("blk_cnt == block, %i == %i, break\n", blk_cnt, (int)block);
+	  break;
+	}
+
+      if(count > 20)
+	{
+	  printk("Count was > 20\n");
+	  goto done;
+	}
+      count++;
       // Allocate a new block, check for errors.
       nr = minix_new_block(inode);
+      printk("New nr: %i\n", nr);
       if (!nr)
 	{
+	  printk("!nr == 0 !\n");
 	  err = -EIO;
 	  goto done;
 	}
       if(nr == (ext_pos + ext_cnt))
 	{
+	  printk("We have a contigious block pos: %i, cnt: %i\n", ext_pos, ext_cnt);
 	  // We have a contiguous block.
 	  cur_ext = set_ext(ext_pos, ++ext_cnt);
 	  blk_cnt++;
@@ -265,6 +294,7 @@ static inline int get_block(struct inode * inode, sector_t block,
       // Check to see if we can allocate a new extent.
       if(ext_idx == 9)
 	{
+	  printk("Whoops, we are out of extents!\n");
 	  // We can't create a new extent, file too large.
 	  err = -EIO;
 	  goto done;
@@ -275,73 +305,16 @@ static inline int get_block(struct inode * inode, sector_t block,
       ext_cnt = 1;
       blk_cnt++;
       idata[ext_idx] = cur_ext;
+      printk("Created new extent: pos %i, cnt %i, index %i, blk_cnt %i\n", ext_pos, ext_cnt, ext_idx, blk_cnt);
     }
 
-  blk_pos = ext_pos + (block - blk_cnt);
+  blk_pos = ext_pos + (block - (blk_cnt - 1));
+  printk("Out of loop, mapping %i into bc\n", blk_pos);
   map_bh(bh, inode->i_sb, block_to_cpu(blk_pos));
   
  done:
+  printk("Arrived at done\n");
   return err;
-  
-  
-/*  	err = -EIO; */
-/* 	int offsets[DEPTH]; */
-/* 	Indirect chain[DEPTH]; */
-/* 	Indirect *partial; */
-/* 	int left; */
-/* 	int depth = block_to_path(inode, block, offsets); */
-
-/* 	if (depth == 0) */
-/* 		goto out; */
-
-/* reread: */
-/* 	partial = get_branch(inode, depth, offsets, chain, &err); */
-
-/* 	/\* Simplest case - block found, no allocation needed *\/ */
-/* 	if (!partial) { */
-/* got_it: */
-/* 		map_bh(bh, inode->i_sb, block_to_cpu(chain[depth-1].key)); */
-/* 		/\* Clean up and exit *\/ */
-/* 		partial = chain+depth-1; /\* the whole chain *\/ */
-/* 		goto cleanup; */
-/* 	} */
-
-/* 	/\* Next simple case - plain lookup or failed read of indirect block *\/ */
-/* 	if (!create || err == -EIO) { */
-/* cleanup: */
-/* 		while (partial > chain) { */
-/* 			brelse(partial->bh); */
-/* 			partial--; */
-/* 		} */
-/* out: */
-/* 		return err; */
-/* 	} */
-
-/* 	/\* */
-/* 	 * Indirect block might be removed by truncate while we were */
-/* 	 * reading it. Handling of that case (forget what we've got and */
-/* 	 * reread) is taken out of the main path. */
-/* 	 *\/ */
-/* 	if (err == -EAGAIN) */
-/* 		goto changed; */
-
-/* 	left = (chain + depth) - partial; */
-/* 	err = alloc_branch(inode, left, offsets+(partial-chain), partial); */
-/* 	if (err) */
-/* 		goto cleanup; */
-
-/* 	if (splice_branch(inode, chain, partial, left) < 0) */
-/* 		goto changed; */
-
-/* 	set_buffer_new(bh); */
-/* 	goto got_it; */
-
-/* changed: */
-/* 	while (partial > chain) { */
-/* 		brelse(partial->bh); */
-/* 		partial--; */
-/* 	} */
-/* 	goto reread; */
 }
 
 static inline int all_zeroes(block_t *p, block_t *q)
@@ -434,59 +407,62 @@ static void free_branches(struct inode *inode, block_t *p, block_t *q, int depth
 // New size in inode->isize.
 static inline void truncate (struct inode * inode)
 {
-	struct super_block *sb = inode->i_sb;
-	block_t *idata = i_data(inode);
-	int offsets[DEPTH];
-	Indirect chain[DEPTH];
-	Indirect *partial;
-	block_t nr = 0;
-	int n;
-	int first_whole;
-	long iblock;
+  return;
 
-	iblock = (inode->i_size + sb->s_blocksize -1) >> sb->s_blocksize_bits;
-	block_truncate_page(inode->i_mapping, inode->i_size, get_block);
 
-	n = block_to_path(inode, iblock, offsets);
-	if (!n)
-		return;
+/* 	struct super_block *sb = inode->i_sb; */
+/* 	block_t *idata = i_data(inode); */
+/* 	int offsets[DEPTH]; */
+/* 	Indirect chain[DEPTH]; */
+/* 	Indirect *partial; */
+/* 	block_t nr = 0; */
+/* 	int n; */
+/* 	int first_whole; */
+/* 	long iblock; */
 
-	if (n == 1) {
-		free_data(inode, idata+offsets[0], idata + DIRECT);
-		first_whole = 0;
-		goto do_indirects;
-	}
+/* 	iblock = (inode->i_size + sb->s_blocksize -1) >> sb->s_blocksize_bits; */
+/* 	block_truncate_page(inode->i_mapping, inode->i_size, get_block); */
 
-	first_whole = offsets[0] + 1 - DIRECT;
-	partial = find_shared(inode, n, offsets, chain, &nr);
-	if (nr) {
-		if (partial == chain)
-			mark_inode_dirty(inode);
-		else
-			mark_buffer_dirty_inode(partial->bh, inode);
-		free_branches(inode, &nr, &nr+1, (chain+n-1) - partial);
-	}
-	/* Clear the ends of indirect blocks on the shared branch */
-	while (partial > chain) {
-		free_branches(inode, partial->p + 1, block_end(partial->bh),
-				(chain+n-1) - partial);
-		mark_buffer_dirty_inode(partial->bh, inode);
-		brelse (partial->bh);
-		partial--;
-	}
-do_indirects:
-	/* Kill the remaining (whole) subtrees */
-	while (first_whole < DEPTH-1) {
-		nr = idata[DIRECT+first_whole];
-		if (nr) {
-			idata[DIRECT+first_whole] = 0;
-			mark_inode_dirty(inode);
-			free_branches(inode, &nr, &nr+1, first_whole+1);
-		}
-		first_whole++;
-	}
-	inode->i_mtime = inode->i_ctime = CURRENT_TIME_SEC;
-	mark_inode_dirty(inode);
+/* 	n = block_to_path(inode, iblock, offsets); */
+/* 	if (!n) */
+/* 		return; */
+
+/* 	if (n == 1) { */
+/* 		free_data(inode, idata+offsets[0], idata + DIRECT); */
+/* 		first_whole = 0; */
+/* 		goto do_indirects; */
+/* 	} */
+
+/* 	first_whole = offsets[0] + 1 - DIRECT; */
+/* 	partial = find_shared(inode, n, offsets, chain, &nr); */
+/* 	if (nr) { */
+/* 		if (partial == chain) */
+/* 			mark_inode_dirty(inode); */
+/* 		else */
+/* 			mark_buffer_dirty_inode(partial->bh, inode); */
+/* 		free_branches(inode, &nr, &nr+1, (chain+n-1) - partial); */
+/* 	} */
+/* 	/\* Clear the ends of indirect blocks on the shared branch *\/ */
+/* 	while (partial > chain) { */
+/* 		free_branches(inode, partial->p + 1, block_end(partial->bh), */
+/* 				(chain+n-1) - partial); */
+/* 		mark_buffer_dirty_inode(partial->bh, inode); */
+/* 		brelse (partial->bh); */
+/* 		partial--; */
+/* 	} */
+/* do_indirects: */
+/* 	/\* Kill the remaining (whole) subtrees *\/ */
+/* 	while (first_whole < DEPTH-1) { */
+/* 		nr = idata[DIRECT+first_whole]; */
+/* 		if (nr) { */
+/* 			idata[DIRECT+first_whole] = 0; */
+/* 			mark_inode_dirty(inode); */
+/* 			free_branches(inode, &nr, &nr+1, first_whole+1); */
+/* 		} */
+/* 		first_whole++; */
+/* 	} */
+/* 	inode->i_mtime = inode->i_ctime = CURRENT_TIME_SEC; */
+/* 	mark_inode_dirty(inode); */
 }
 
 static inline unsigned nblocks(loff_t size, struct super_block *sb)

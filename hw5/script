@@ -1,0 +1,6 @@
+#!/bin/bash
+sudo umount M
+sudo rmmod minix
+sudo insmod minix.ko
+sudo mkfs.minix -v /dev/ram3
+sudo mount /dev/ram3 M
