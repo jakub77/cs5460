@@ -1,16 +1,19 @@
 static inline int get_ext_pos(int x)
 {
-  return ((x >> 8) & 0xFFFFFF);
+  return x & 0xFFFFFF;
 }
 
 static inline int get_ext_cnt(int x)
 {
-  return x & 0xFF;
+  int cnt = ((x >> 24) & 0xFF) + 1;
+  if(cnt == 256)
+    return 0;
+  return cnt;
 }
 static inline int set_ext(int pos, int count)
 {
-  count = count & 0xFF;
-  pos = (pos & 0xFFFFFF) << 8;
+  count = ((count - 1) & 0xFF) << 24;
+  pos = pos & 0xFFFFFF;
   return pos | count;
 }
 
@@ -224,13 +227,12 @@ static inline int add_single_block_to_extent(struct inode *inode, int *blk_adr)
   ext_idx++;
 
  set_blk:
-  minix_i(inode)->u.i2_data[ext_idx] = cur_ext;
+  idata[ext_idx] = cur_ext;
+  //minix_i(inode)->u.i2_data[ext_idx] = cur_ext;
   *blk_adr = nr;
-  //mark_inode_dirty(inode);
+  mark_inode_dirty(inode);
   return blk_cnt + 1;
 }
-
-
 
 // Adds blocks to the extents until we get to block number block.
 // Returns the last block address on success, and -1 on error.
@@ -304,7 +306,7 @@ static inline int get_block(struct inode * inode, sector_t block,
   int res;
   int err = 0;
 
-  printk("Inode %li\n", inode->i_ino);
+  printk("Inode %li request for block %i\n", inode->i_ino, (int)block);
   printk("In get_block, these are the extents seen:\n");
   print_extents(inode);
 
@@ -315,7 +317,7 @@ static inline int get_block(struct inode * inode, sector_t block,
   if(res != -1)
     {
       map_bh(bh, inode->i_sb, block_to_cpu(res));
-      err = res;
+      err = 0;
       printk("mapped in %i to bh going to done to ret %i\n", res, err);
       goto done;
     }
@@ -339,13 +341,13 @@ static inline int get_block(struct inode * inode, sector_t block,
     }
   
   map_bh(bh, inode->i_sb, block_to_cpu(res));
-  err = res;
+  err = 0;
   printk("Our final location to map this new block to is %i\n", res);
   goto done;
 
  done:
   printk("Got to done in get_block, will return %i\n", err);
-  printk("These are the extents at get_block is about to return\n");
+  printk("These are the extents as get_block is about to return\n");
   print_extents(inode);
   printk("\n\n");
   return err;
@@ -359,45 +361,45 @@ static inline int all_zeroes(block_t *p, block_t *q)
 	return 1;
 }
 
-/* static Indirect *find_shared(struct inode *inode, */
-/* 				int depth, */
-/* 				int offsets[DEPTH], */
-/* 				Indirect chain[DEPTH], */
-/* 				block_t *top) */
-/* { */
-/* 	Indirect *partial, *p; */
-/* 	int k, err; */
+static Indirect *find_shared(struct inode *inode,
+				int depth,
+				int offsets[DEPTH],
+				Indirect chain[DEPTH],
+				block_t *top)
+{
+	Indirect *partial, *p;
+	int k, err;
 
-/* 	*top = 0; */
-/* 	for (k = depth; k > 1 && !offsets[k-1]; k--) */
-/* 		; */
-/* 	partial = get_branch(inode, k, offsets, chain, &err); */
+	*top = 0;
+	for (k = depth; k > 1 && !offsets[k-1]; k--)
+		;
+	partial = get_branch(inode, k, offsets, chain, &err);
 
-/* 	write_lock(&pointers_lock); */
-/* 	if (!partial) */
-/* 		partial = chain + k-1; */
-/* 	if (!partial->key && *partial->p) { */
-/* 		write_unlock(&pointers_lock); */
-/* 		goto no_top; */
-/* 	} */
-/* 	for (p=partial;p>chain && all_zeroes((block_t*)p->bh->b_data,p->p);p--) */
-/* 		; */
-/* 	if (p == chain + k - 1 && p > chain) { */
-/* 		p->p--; */
-/* 	} else { */
-/* 		*top = *p->p; */
-/* 		*p->p = 0; */
-/* 	} */
-/* 	write_unlock(&pointers_lock); */
+	write_lock(&pointers_lock);
+	if (!partial)
+		partial = chain + k-1;
+	if (!partial->key && *partial->p) {
+		write_unlock(&pointers_lock);
+		goto no_top;
+	}
+	for (p=partial;p>chain && all_zeroes((block_t*)p->bh->b_data,p->p);p--)
+		;
+	if (p == chain + k - 1 && p > chain) {
+		p->p--;
+	} else {
+		*top = *p->p;
+		*p->p = 0;
+	}
+	write_unlock(&pointers_lock);
 
-/* 	while(partial > p) */
-/* 	{ */
-/* 		brelse(partial->bh); */
-/* 		partial--; */
-/* 	} */
-/* no_top: */
-/* 	return partial; */
-/* } */
+	while(partial > p)
+	{
+		brelse(partial->bh);
+		partial--;
+	}
+no_top:
+	return partial;
+}
 
 static inline void free_data(struct inode *inode, block_t *p, block_t *q)
 {
@@ -412,29 +414,29 @@ static inline void free_data(struct inode *inode, block_t *p, block_t *q)
 	}
 }
 
-/* static void free_branches(struct inode *inode, block_t *p, block_t *q, int depth) */
-/* { */
-/* 	struct buffer_head * bh; */
-/* 	unsigned long nr; */
+static void free_branches(struct inode *inode, block_t *p, block_t *q, int depth)
+{
+	struct buffer_head * bh;
+	unsigned long nr;
 
-/* 	if (depth--) { */
-/* 		for ( ; p < q ; p++) { */
-/* 			nr = block_to_cpu(*p); */
-/* 			if (!nr) */
-/* 				continue; */
-/* 			*p = 0; */
-/* 			bh = sb_bread(inode->i_sb, nr); */
-/* 			if (!bh) */
-/* 				continue; */
-/* 			free_branches(inode, (block_t*)bh->b_data, */
-/* 				      block_end(bh), depth); */
-/* 			bforget(bh); */
-/* 			minix_free_block(inode, nr); */
-/* 			mark_inode_dirty(inode); */
-/* 		} */
-/* 	} else */
-/* 		free_data(inode, p, q); */
-/* } */
+	if (depth--) {
+		for ( ; p < q ; p++) {
+			nr = block_to_cpu(*p);
+			if (!nr)
+				continue;
+			*p = 0;
+			bh = sb_bread(inode->i_sb, nr);
+			if (!bh)
+				continue;
+			free_branches(inode, (block_t*)bh->b_data,
+				      block_end(bh), depth);
+			bforget(bh);
+			minix_free_block(inode, nr);
+			mark_inode_dirty(inode);
+		}
+	} else
+		free_data(inode, p, q);
+}
 
 // Resize a file by changing the number of blocks it will use,
 // potentially deleting a block.

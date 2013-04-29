@@ -7,17 +7,22 @@ int used_extents;
 
 static inline int get_ext_pos(int x)
 {
-  return ((x >> 8) & 0xFFFFFF);
+  return x & 0xFFFFFF;
+  //return ((x >> 8) & 0xFFFFFF);
 }
 
 static inline int get_ext_cnt(int x)
 {
-  return x & 0xFF;
+  int cnt = ((x >> 24) & 0xFF) + 1;
+  if(cnt == 256)
+    return 0;
+  return cnt;
+  //return x & 0xFF;
 }
 static inline int set_ext(int pos, int count)
 {
-  count = count & 0xFF;
-  pos = (pos & 0xFFFFFF) << 8;
+  count = ((count - 1) & 0xFF) << 24;
+  pos = pos & 0xFFFFFF;
   return pos | count;
 }
 
@@ -167,21 +172,21 @@ static inline int get_matching_block(int block)
       cur_ext = idata[i];
       ext_adr = get_ext_pos(cur_ext);
       ext_cnt = get_ext_cnt(cur_ext);
-      //printk("Loop cur_ext: %i, adr: %i, cnt: %i, blk_cnt: %i\n", cur_ext, ext_adr, ext_cnt, blk_cnt);
+      printf("Loop cur_ext: %i, adr: %i, cnt: %i, blk_cnt: %i\n", cur_ext, ext_adr, ext_cnt, blk_cnt);
       if(ext_cnt == 0)
 	{
-	  //printk("Didn't find the block, ext_cnt was 0\n");
+	  printf("Didn't find the block, ext_cnt was 0\n");
 	  return -1;
 	}
       if(block < blk_cnt + ext_cnt)
 	{
 	  blk_pos = ext_adr + (block - blk_cnt);
-	  //printk("Block should be in this extent, blk_pos is %i\n", blk_pos);
+	  printf("Block should be in this extent, blk_pos is %i\n", blk_pos);
 	  return blk_pos;
 	}
       blk_cnt += ext_cnt;
     }
-  //printk("Should not have returned to end of get_matching_block, ret -1\n");
+  printf("Should not have returned to end of get_matching_block, ret -1\n");
   return -1;
 }
 
@@ -189,7 +194,7 @@ static inline void print_extents()
 {
   int i;
   int *idata = i_data_global;
-  printf("index\tval\tadr\tcnt\n");
+  printf("index\tval\t\tadr\tcnt\n");
   for(i = 0; i < 10; i++)
     printf("E%i:\t %i\t%i\t%i\n", i, idata[i], get_ext_pos(idata[i]), get_ext_cnt(idata[i]));
 }
