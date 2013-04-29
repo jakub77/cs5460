@@ -22,7 +22,7 @@ static inline int set_ext(int pos, int count)
 }
 
 // Create a list of 10 extents.
-void create_extent()
+void create_extents()
 {
   ext_addresses = malloc(10*sizeof(int));
   i_data_global = malloc(10*sizeof(int));
@@ -36,81 +36,125 @@ void create_extent()
   ext_addresses[7] = 300;
   ext_addresses[8] = 350;
   ext_addresses[9] = 400;
-  i_data_global[0] = set_ext(ext_addresses[0], 1);
-  i_data_global[1] = set_ext(ext_addresses[1], 2);
-  i_data_global[2] = set_ext(ext_addresses[2], 3);
-  i_data_global[3] = set_ext(ext_addresses[3], 0);
-  i_data_global[4] = set_ext(ext_addresses[4], 0);
-  i_data_global[5] = set_ext(ext_addresses[5], 0);
-  i_data_global[6] = set_ext(ext_addresses[6], 0);
-  i_data_global[7] = set_ext(ext_addresses[7], 0);
-  i_data_global[8] = set_ext(ext_addresses[8], 0);
-  i_data_global[9] = set_ext(ext_addresses[9], 0);
-  used_extents = 3;
+  i_data_global[0] = set_ext(0, 0);
+  i_data_global[1] = set_ext(0, 0);
+  i_data_global[2] = set_ext(0, 0);
+  i_data_global[3] = set_ext(0, 0);
+  i_data_global[4] = set_ext(0, 0);
+  i_data_global[5] = set_ext(0, 0);
+  i_data_global[6] = set_ext(0, 0);
+  i_data_global[7] = set_ext(0, 0);
+  i_data_global[8] = set_ext(0, 0);
+  i_data_global[9] = set_ext(0, 0);
+  used_extents = 0;
   return;
 }
 
-// Adds a new block to the extents, returns the number of blocks
-// represented by the extents, or -1 if we can't.
-int add_to_extents()
+int minix_new_block()
 {
-  printf("In add_to_extents\n");
-  int *idata = i_data_global;
-  int num_extents = 0;
-  int blk_cnt = 0;
-  int cur_ext = 0;
-  int ext_cnt = 0;
-  int ext_adr = 0;
-  int blk_pos = 0;
-  int i = 0;
+  int ret;
+  printf("Enter block number for minix_new_block() to use\n");
+  scanf("%i", &ret);
+  return ret;
+}
 
-  // Find the extent we wish to add to
-  for(i = 0; i < 10; i++)
+
+// Adds a single block to the extents of an inode.
+// return -1 on error, and the number of blocks (count, not index)
+// of blocks represented.
+// blk_adr is set to the be address of the block that was last added
+// when an error does not occur.
+static inline int add_single_block_to_extent(int *blk_adr)
+{
+  int *idata = i_data_global;
+  int cur_ext;
+  int ext_adr;
+  int ext_cnt;
+  int ext_idx;
+  int blk_cnt = 0;
+  int nr;
+
+  // Determine which extent we can add a block to.
+  for(ext_idx = 0; ext_idx < 10; ext_idx++)
     {
-      cur_ext = idata[i];
+      // Get the ith extent.
+      cur_ext = idata[ext_idx];
       ext_adr = get_ext_pos(cur_ext);
       ext_cnt = get_ext_cnt(cur_ext);
-      printf("L1 cur_ext: %i, adr: %i, cnt: %i, blk_cnt: %i\n", cur_ext, ext_adr, ext_cnt, blk_cnt);
-
+      
+      // Add the number of blocks this extent represents to the total number of blocks represented.
       blk_cnt += ext_cnt;
 
-      if(ext_cnt == 255)
-	{
-	  printf("This ext was full, let's move to next\n");
+      if(ext_cnt == 255) // If this extent cannot fit more blocks, go to next extent.
 	  continue;
-	}
-
-      // See if there is an extent that follows this, if it's count is 0, 
-      // try to add to that extent.
-      if(i < 9)
-	{
-	  printf("i = %i < 9\n", i);
-	  if(get_ext_cnt(idata[i+1]) == 0)
-	    {
-	      printf("Next ext has count of 0, let's add to this ext\n");
-	      goto add_to_extent;
-	    }
-	}
+      if(ext_idx == 9) // If this is the 10th (index 9) extent, there is no 11th to add to.
+	goto add_blk;
+      if(get_ext_cnt(idata[ext_idx+1]) == 0) // If the next extent is empty, we can try to add to this extent without breaking data.
+	goto add_blk;
+      // If we are here, we saw an extent, but there is at least one valid extent after this we need to add to instead.
     }
 
+  // If we get here, we have used all 10 extents, and the last extent has a size of 255, our file is max size.
   return -1;
 
- add_to_extent:  
-  printf("ATE i %i, cur_ext %i, adr %i, cnt %i, blk_cnt %i\n", i, cur_ext, ext_adr, ext_cnt, blk_cnt);
-  if(ext_cnt != 0)
-    idata[i] = set_ext(ext_adr, ext_cnt+1);
-  else
-    idata[i] = set_ext(ext_addresses[used_extents], 1);
-  printf("ATE i %i, cur_ext %i, adr %i, cnt %i, blk_cnt %i\n", i, cur_ext, ext_adr, ext_cnt, blk_cnt);
+ add_blk:
+  // Allocate a new block.
+  nr = minix_new_block();
+  if (!nr)
+      return -1;
 
-  return blk_cnt;
+  // if our extent is of size 0, we allocate this new block as the start of the extent
+  if(ext_cnt == 0)
+    {
+      cur_ext = set_ext(nr, 1);
+      goto set_blk;
+    }
+
+  // Otherwise, we are adding to a non-empty extent, let's check if our new block is contiguous.
+  if(nr == (ext_adr + ext_cnt))
+    {
+      // If it is, let's make this extent one larger.
+      cur_ext = set_ext(ext_adr, ++ext_cnt);
+      goto set_blk;
+    }
+
+  // In this case, the block is not contigious and needs to be put into the next extent if possible.
+  if(ext_idx == 9)
+    return -1;
+  cur_ext = set_ext(nr, 1);
+  ext_idx++;
+
+ set_blk:
+  i_data_global[ext_idx] = cur_ext;
+  *blk_adr = nr;
+  //mark_inode_dirty(inode);
+  return blk_cnt + 1;
+}
+
+// Adds blocks to the extents until we get to block number block.
+// Returns the last block address on success, and -1 on error.
+static inline int add_to_extents(int block)
+{
+  int blk_cnt;
+  int blk_adr;
+  for(;;)
+    {
+      // Try to add a single block to the inode.
+      blk_cnt = add_single_block_to_extent(&blk_adr);
+      // If adding a block failed, return failure.
+      if(blk_cnt == -1)
+	return -1;
+      // Check to see if we added enough blocks, if so, return the address of this block.
+      if(blk_cnt == block + 1)
+	return blk_adr;
+    }
 }
 
 // Loop through the extents looking for the block.
 // returns the block #, or -1 if not found.
-int get_matching_block(int block)
+static inline int get_matching_block(int block)
 {
-  printf("In get_macthing_block, block: %i\n", block);
+  //printk("In get_macthing_block, block: %i\n", (int)block);
   int *idata = i_data_global;
   int i;
   int blk_cnt = 0;
@@ -123,56 +167,87 @@ int get_matching_block(int block)
       cur_ext = idata[i];
       ext_adr = get_ext_pos(cur_ext);
       ext_cnt = get_ext_cnt(cur_ext);
-      printf("Loop cur_ext: %i, adr: %i, cnt: %i, blk_cnt: %i\n", cur_ext, ext_adr, ext_cnt, blk_cnt);
+      //printk("Loop cur_ext: %i, adr: %i, cnt: %i, blk_cnt: %i\n", cur_ext, ext_adr, ext_cnt, blk_cnt);
       if(ext_cnt == 0)
 	{
-	  printf("Didn't find the block, ext_cnt was 0\n");
+	  //printk("Didn't find the block, ext_cnt was 0\n");
 	  return -1;
 	}
       if(block < blk_cnt + ext_cnt)
 	{
 	  blk_pos = ext_adr + (block - blk_cnt);
-	  printf("Block should be in this extent, blk_pos is %i\n", blk_pos);
+	  //printk("Block should be in this extent, blk_pos is %i\n", blk_pos);
 	  return blk_pos;
 	}
       blk_cnt += ext_cnt;
     }
+  //printk("Should not have returned to end of get_matching_block, ret -1\n");
+  return -1;
+}
+
+static inline void print_extents()
+{
+  int i;
+  int *idata = i_data_global;
+  printf("index\tval\tadr\tcnt\n");
+  for(i = 0; i < 10; i++)
+    printf("E%i:\t %i\t%i\t%i\n", i, idata[i], get_ext_pos(idata[i]), get_ext_cnt(idata[i]));
+}
+
+static inline int get_block(int block)
+{
+  int res;
+  int err = -1;
+
+  printf("The current extents before anything are:\n");
+  print_extents();
+
+  res = get_matching_block(block);
+  printf("get_matching_blocks returned %i\n", res);
+
+  if(res != -1)
+    {
+      err = res;
+      printf("Mappying %i to bh, returning %i\n", res, err);
+      goto done;
+    }
+  
+  printf("Calling add_to_extents to get to block %i\n", block);
+  res = add_to_extents(block);
+  printf("add_to_exents returned %i\n", res);
+  if(res == -1)
+    {
+      printf("res of -1 means error, return it\n");
+      err = -1;
+      goto done;
+    }
+
+  err = res;
+  printf("Our final locaiton to map is %i\n", res);
+
+ done:
+  printf("At done, will return %i\n", err);
+  printf("Final extents as quitting are:\n");
+  print_extents();
+  return err;
+
 }
 
 int main(int argc, char* argv[])
 {
-  if(argc < 2)
-    return 0;
-  int block = atoi(argv[1]);
-  create_extent();
-  int block_addr = get_matching_block(block);
-  printf("get_matching_block returned %i\n", block_addr);
-  int res = 0;
-  if(block_addr == -1)
+  int block;
+  int res;
+  create_extents();
+  for(;;)
     {
-      while(1)
-	{
-	  res = add_to_extents();
-	  if(res == -1)
-	    {
-	      printf("Res was -1, abort\n");
-	      exit(0);
-	    }
-	  if(res == block)
-	    {
-	      block_addr = get_matching_block(block);
-	      printf("re_call g_m_b: %i\n", block_addr);
-	      break;
-	    }
-	}
+      printf("\n---------------------------\n");
+      printf("Enter block you are looking for:\n");
+      scanf("%i", &block);
+      if(block < 0)
+	exit(0);
+      res = get_block(block);
+      printf("Res from get_block: %i\n", res);
     }
-
-  int i;
-  for(i = 0; i < 10; i++)
-    printf("E: %i, %i, %i\n", i_data_global[i], get_ext_pos(i_data_global[i]), get_ext_cnt(i_data_global[i]));
-
-  printf("The final block is at: %i\n", block_addr);
-  printf("Done\n");
 }
 
 

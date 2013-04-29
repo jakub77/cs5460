@@ -304,10 +304,10 @@ static inline int get_block(struct inode * inode, sector_t block,
   int res;
   int err = 0;
 
-  printk("In get_block, these are the extetns seen:\n");
+  printk("Inode %li\n", inode->i_ino);
+  printk("In get_block, these are the extents seen:\n");
   print_extents(inode);
 
-  printk("Calling get_matching_block with a block of %i\n", (int)block);
   res = get_matching_block(block, inode);
   printk("get_matching_block returned %i\n", res);
   
@@ -315,10 +315,8 @@ static inline int get_block(struct inode * inode, sector_t block,
   if(res != -1)
     {
       map_bh(bh, inode->i_sb, block_to_cpu(res));
-      //mark_inode_dirty(inode);
-
       err = res;
-      printk("mapped in %i to bh, marked as dirty, returning %i\n", res, err);
+      printk("mapped in %i to bh going to done to ret %i\n", res, err);
       goto done;
     }
 
@@ -330,8 +328,9 @@ static inline int get_block(struct inode * inode, sector_t block,
       goto done;
     }
 
-  printk("Adding to entents until we get to block %i\n", (int)block);
+  printk("Calling add_to_extents to get to block: %i\n", (int)block);
   res = add_to_extents(block, inode);
+  printk("Add_to_extents returned %i\n", res);
   if(res == -1)
     {
       printk("res was -1, so an error occured, return -EIO\n");
@@ -340,13 +339,8 @@ static inline int get_block(struct inode * inode, sector_t block,
     }
   
   map_bh(bh, inode->i_sb, block_to_cpu(res));
-  memset(bh->b_data, 0, bh->b_size);
-  set_buffer_uptodate(bh);
-  set_buffer_new(bh);
-  mark_inode_dirty(inode);
-
   err = res;
-  printk("mapped in %i to bh, marked as dirty, returning %i\n", res, err);
+  printk("Our final location to map this new block to is %i\n", res);
   goto done;
 
  done:
