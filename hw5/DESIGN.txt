@@ -1,0 +1,76 @@
+Jakub Szpunar CS5460 HW5 Minix w/ extents.
+
+Storing an extent:
+  An extent is stores in a single zone as an int. It is composed of two
+  parts. First the block address is composed of the right 3 bytes of
+  the int. This is the block address that all blocks represented in
+  this extent offset from. The second part is composed of the left 1
+  byte, and is the count. This is how many blocks are represented in this
+  extent. Because of this, an extent can store at most 255 blocks, and
+  the entire block space is only 2^24. The inode object itself was not
+  changed at all, the zones themselves just have a different meaning now.
+  As there were 10 zones available, the inode now stores 10 extents.
+
+General outline of get_block:
+  First, the program looks through the extents to see if one represents
+  the block index looked for. If so, we get the block address of the block,
+  map it into the buffer cache, and return 0. If we don't have the block
+  looked for, we check if create is set, if it is not, we return -EIO. If
+  create is set, we create new blocks/extents until we get to the desired
+  block index. We then map the desired block into the buffer cache, and
+  return 0.
+
+General outline of truncate:
+  We loop through all of our extents looking for the new end of file position.
+  If we find it in an extent, we delete everything after that extent, and free
+  all blocks in that extent that are no longer needed. If we have looked
+  through all extents and havent found the end of file, we add blocks/extents
+  until we get to the desired larger new size.
+
+General outline of nblocks:
+  We look at the size wanted to be represented and then return how many
+  blocks it would take to store a file of that size.
+
+Worst case max file size (extents represent one block)
+  In this case, we have 10 extents each representing a single block. As blocks
+  are 1024 bytes, we can at most represent a 10KB file (base 2).
+
+Best case max file size (extents represent max blocks)
+  In this case, we have 10 extents each representing 255 blocks. It is 255
+  since the count fiend in my extents is represented by an 8 bit field, and
+  I need to be able to represent extents of size 0. As blocks are 1KB, we can
+  represent 1KB * 10 * 255, or 2550KB files in the best case.
+
+Testing
+  To start, I created a script that would handle the insmod, rmmod, mkfs,
+  mounting and whatnot. I would run this script between versions. Once I was
+  reasonably sure that my solution worked, I tested it in the following ways:
+
+  cp: I used cp to copy files to and from the directory. I opened up both
+    files in different text editors/viewers (emacs, cat) and compared the
+    files. I also used ls-all to compare the files by size, date etc.
+
+  emacs: I created files in emacs and added text to them, removed text
+    from them, and saved them. I closed, and reopened files and saw consistant
+    results. 
+
+  make/gcc : I copied files over from different projects and compiled them
+    in my mounted directory. The programs compiled successfully and did
+    run without issue. 
+
+  printk : While I was doing the above 3 methods, I also read through dmesg
+    to see all the printk statements I was printing. Most helpful was looking
+    at a printout of the extents before and after an operation was performed.
+    Once working, everything seemed in order. This helped me find a lot of
+    issues in earlier versions of my program.
+
+  mount/unmount : I saved files into my mounted directory. Next, I unmounted
+    the directory and remounted it. The files persisted between mounts. 
+
+  large file: I downloaded a larger 70KB iamge. I copied it over to my minik
+    mounted directory and opened the file. The jpg opened without issues in
+    emacs. I tried umount/mount and the file persisted. This test shows that
+    extents are indeed working as the file is larger than the worst case 
+    file size of 10KB.
+
+
