@@ -1,20 +1,28 @@
+// Get the block address out of an int represeting an extent.
 static inline int get_ext_pos(int x)
 {
   return x & 0xFFFFFF;
 }
 
+// Get the count out of an int representing an extent, special
+// case to make root node work by offsetting count by one when
+// stored. returns 0 if the block address of the extent is not set.
 static inline int get_ext_cnt(int x)
 {
-  int cnt = ((x >> 25) & 0xFF);
+  int cnt;
+  if(get_ext_pos(x) == 0)
+    return 0;
+  cnt = ((x >> 24) & 0xFF);
   if(cnt == 255)
     cnt = -1;
   cnt++;
   return cnt;
 }
 
+// Give a block address and count to receive a packaged
+// int that represents an extent. 
 static inline int set_ext(int pos, int count)
 {
-  // store counts as offset by one, so that 0 on disk really means 1.
   count--;
   if(count == -1)
     count = 255;
@@ -91,45 +99,6 @@ no_block:
 	return p;
 }
 
-/* static int alloc_branch(struct inode *inode, */
-/* 			     int num, */
-/* 			     int *offsets, */
-/* 			     Indirect *branch) */
-/* { */
-/* 	int n = 0; */
-/* 	int i; */
-/* 	int parent = minix_new_block(inode); */
-
-/* 	branch[0].key = cpu_to_block(parent); */
-/* 	if (parent) for (n = 1; n < num; n++) { */
-/* 		struct buffer_head *bh; */
-/* 		/\* Allocate the next block *\/ */
-/* 		int nr = minix_new_block(inode); */
-/* 		if (!nr) */
-/* 			break; */
-/* 		branch[n].key = cpu_to_block(nr); */
-/* 		bh = sb_getblk(inode->i_sb, parent); */
-/* 		lock_buffer(bh); */
-/* 		memset(bh->b_data, 0, bh->b_size); */
-/* 		branch[n].bh = bh; */
-/* 		branch[n].p = (block_t*) bh->b_data + offsets[n]; */
-/* 		*branch[n].p = branch[n].key; */
-/* 		set_buffer_uptodate(bh); */
-/* 		unlock_buffer(bh); */
-/* 		mark_buffer_dirty_inode(bh, inode); */
-/* 		parent = nr; */
-/* 	} */
-/* 	if (n == num) */
-/* 		return 0; */
-
-/* 	/\* Allocation failed, free what we already allocated *\/ */
-/* 	for (i = 1; i < n; i++) */
-/* 		bforget(branch[i].bh); */
-/* 	for (i = 0; i < n; i++) */
-/* 		minix_free_block(inode, block_to_cpu(branch[i].key)); */
-/* 	return -ENOSPC; */
-/* } */
-
 static inline int splice_branch(struct inode *inode,
 				     Indirect chain[DEPTH],
 				     Indirect *where,
@@ -181,7 +150,7 @@ static inline int add_single_block_to_extent(struct inode *inode, int *blk_adr)
   int ext_idx;
   int blk_cnt = 0;
   int nr;
-  printk("In add single block to extent\n");
+  //printk("In add single block to extent\n");
 
   // Determine which extent we can add a block to.
   for(ext_idx = 0; ext_idx < 10; ext_idx++)
@@ -190,39 +159,37 @@ static inline int add_single_block_to_extent(struct inode *inode, int *blk_adr)
       cur_ext = idata[ext_idx];
       ext_adr = get_ext_pos(cur_ext);
       ext_cnt = get_ext_cnt(cur_ext);
-      if(ext_adr == 0)
-	ext_cnt = 0;
 
-      printk("looking at extent: %i, a: %i, c: %i\n", cur_ext, ext_adr, ext_cnt);
+      //printk("looking at extent: %i, a: %i, c: %i\n", cur_ext, ext_adr, ext_cnt);
       
       // Add the number of blocks this extent represents to the total number of blocks represented.
       blk_cnt += ext_cnt;
-      printk("Updated blk_cnt to %i\n", blk_cnt);
+      //printk("Updated blk_cnt to %i\n", blk_cnt);
 
       if(ext_cnt == 255) // If this extent cannot fit more blocks, go to next extent.
 	{
-	  printk("ext_cnt was 255, go to next extent\n");
+	  //printk("ext_cnt was 255, go to next extent\n");
 	  continue;
 	}
 
       if(ext_idx == 9) // If this is the 10th (index 9) extent, there is no 11th to add to.
 	{
-	  printk("this is extent 9, add to this extent\n");
+	  //printk("this is extent 9, add to this extent\n");
 	  goto add_blk;
 	}
 
       // If the next extent is empty, we can try to add to this extent without breaking data.
-      printk("looking at next extent %i, a: %i, c: %i\n", idata[ext_idx+1], get_ext_pos(idata[ext_idx+1]),get_ext_cnt(idata[ext_idx+1])); 
+      //printk("looking at next extent %i, a: %i, c: %i\n", idata[ext_idx+1], get_ext_pos(idata[ext_idx+1]),get_ext_cnt(idata[ext_idx+1])); 
       if(get_ext_pos(idata[ext_idx+1]) == 0)
 	{
-	  printk("next extent is empty, let's add to this extent\n");
+	  //printk("next extent is empty, let's add to this extent\n");
 	  goto add_blk;
 	}
       // If we are here, we saw an extent, but there is at least one valid extent after this we need to add to instead.
     }
 
   // If we get here, we have used all 10 extents, and the last extent has a size of 255, our file is max size.
-  printk("finished loop, coudln't add to any extents, return -1\n");
+  //printk("finished loop, coudln't add to any extents, return -1\n");
   return -1;
 
  add_blk:
@@ -230,10 +197,12 @@ static inline int add_single_block_to_extent(struct inode *inode, int *blk_adr)
   nr = minix_new_block(inode);
   if (!nr)
       return -1;
+  //printk("requested new block returned %i\n", nr);
 
   // if our extent is of size 0, we allocate this new block as the start of the extent
   if(ext_cnt == 0)
     {
+      //printk("ext_cnt was 0, set THIS extent\n");
       cur_ext = set_ext(nr, 1);
       goto set_blk;
     }
@@ -242,21 +211,25 @@ static inline int add_single_block_to_extent(struct inode *inode, int *blk_adr)
   if(nr == (ext_adr + ext_cnt))
     {
       // If it is, let's make this extent one larger.
-      cur_ext = set_ext(ext_adr, ++ext_cnt);
+      //printk("nr was found to be contigious, increment this extent\n");
+      //printk("pre : %i, %i, %i\n", cur_ext, get_ext_pos(cur_ext), get_ext_cnt(cur_ext));
+      cur_ext = set_ext(ext_adr, ext_cnt + 1);
+      printk("post: %i, %i, %i\n", cur_ext, get_ext_pos(cur_ext), get_ext_cnt(cur_ext));
       goto set_blk;
     }
 
   // In this case, the block is not contigious and needs to be put into the next extent if possible.
   if(ext_idx == 9)
     return -1;
+  //printk("nr was not contiguous, set NEXT extent\n");
   cur_ext = set_ext(nr, 1);
   ext_idx++;
 
  set_blk:
   idata[ext_idx] = cur_ext;
-  //minix_i(inode)->u.i2_data[ext_idx] = cur_ext;
   *blk_adr = nr;
   mark_inode_dirty(inode);
+  //printk("Final extent: %i, %i, %i\n", cur_ext, get_ext_pos(cur_ext), get_ext_cnt(cur_ext));
   return blk_cnt + 1;
 }
 
@@ -296,8 +269,6 @@ static inline int get_matching_block(sector_t block, struct inode * inode)
       cur_ext = idata[i];
       ext_adr = get_ext_pos(cur_ext);
       ext_cnt = get_ext_cnt(cur_ext);
-      if(ext_adr == 0)
-	ext_cnt = 0;
       //printk("Loop cur_ext: %i, adr: %i, cnt: %i, blk_cnt: %i\n", cur_ext, ext_adr, ext_cnt, blk_cnt);
       if(ext_adr == 0)
 	{
@@ -334,7 +305,7 @@ static inline int get_block(struct inode * inode, sector_t block,
   int err = 0;
 
   printk("Inode %li request for block %i\n", inode->i_ino, (int)block);
-  printk("In get_block, these are the extents seen:\n");
+  //printk("In get_block, these are the extents seen:\n");
   print_extents(inode);
 
   res = get_matching_block(block, inode);
@@ -373,7 +344,7 @@ static inline int get_block(struct inode * inode, sector_t block,
   goto done;
 
  done:
-  printk("Got to done in get_block, will return %i\n", err);
+  //printk("Got to done in get_block, will return %i\n", err);
   printk("These are the extents as get_block is about to return\n");
   print_extents(inode);
   printk("\n\n");
@@ -388,46 +359,6 @@ static inline int all_zeroes(block_t *p, block_t *q)
 	return 1;
 }
 
-static Indirect *find_shared(struct inode *inode,
-				int depth,
-				int offsets[DEPTH],
-				Indirect chain[DEPTH],
-				block_t *top)
-{
-	Indirect *partial, *p;
-	int k, err;
-
-	*top = 0;
-	for (k = depth; k > 1 && !offsets[k-1]; k--)
-		;
-	partial = get_branch(inode, k, offsets, chain, &err);
-
-	write_lock(&pointers_lock);
-	if (!partial)
-		partial = chain + k-1;
-	if (!partial->key && *partial->p) {
-		write_unlock(&pointers_lock);
-		goto no_top;
-	}
-	for (p=partial;p>chain && all_zeroes((block_t*)p->bh->b_data,p->p);p--)
-		;
-	if (p == chain + k - 1 && p > chain) {
-		p->p--;
-	} else {
-		*top = *p->p;
-		*p->p = 0;
-	}
-	write_unlock(&pointers_lock);
-
-	while(partial > p)
-	{
-		brelse(partial->bh);
-		partial--;
-	}
-no_top:
-	return partial;
-}
-
 static inline void free_data(struct inode *inode, block_t *p, block_t *q)
 {
 	unsigned long nr;
@@ -439,30 +370,6 @@ static inline void free_data(struct inode *inode, block_t *p, block_t *q)
 			minix_free_block(inode, nr);
 		}
 	}
-}
-
-static void free_branches(struct inode *inode, block_t *p, block_t *q, int depth)
-{
-	struct buffer_head * bh;
-	unsigned long nr;
-
-	if (depth--) {
-		for ( ; p < q ; p++) {
-			nr = block_to_cpu(*p);
-			if (!nr)
-				continue;
-			*p = 0;
-			bh = sb_bread(inode->i_sb, nr);
-			if (!bh)
-				continue;
-			free_branches(inode, (block_t*)bh->b_data,
-				      block_end(bh), depth);
-			bforget(bh);
-			minix_free_block(inode, nr);
-			mark_inode_dirty(inode);
-		}
-	} else
-		free_data(inode, p, q);
 }
 
 // Resize a file by changing the number of blocks it will use,
@@ -482,10 +389,8 @@ static inline void truncate (struct inode * inode)
   int junk;
   int j;
 
-  return;
-
   printk("Inode %li request for truncate to size: %i\n", inode->i_ino, target_size);
-  printk("In truncate, these are the extents seen:\n");
+  //printk("In truncate, these are the extents seen:\n");
   print_extents(inode);
 
   for(ext_idx = 0; ext_idx < 10; ext_idx++)
@@ -494,6 +399,12 @@ static inline void truncate (struct inode * inode)
       cur_ext = idata[ext_idx];
       ext_adr = get_ext_pos(cur_ext);
       ext_cnt = get_ext_cnt(cur_ext);
+
+      if(target_size == 0)
+	{
+	  del_ext_idx = ext_idx;
+	  goto rmv_blks;
+	}
 
       if(ext_cnt == 0)
 	{
@@ -564,7 +475,7 @@ static inline void truncate (struct inode * inode)
   goto edone;
 
  edone:
-  printk("Got to edone in truncate\n");
+  //printk("Got to edone in truncate\n");
   printk("These are the extents as truncate is about to return\n");
   print_extents(inode);
   printk("\n\n");
