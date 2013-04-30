@@ -41,16 +41,16 @@ void create_extents()
   ext_addresses[7] = 300;
   ext_addresses[8] = 350;
   ext_addresses[9] = 400;
-  i_data_global[0] = set_ext(0, 0);
-  i_data_global[1] = set_ext(0, 0);
-  i_data_global[2] = set_ext(0, 0);
-  i_data_global[3] = set_ext(0, 0);
-  i_data_global[4] = set_ext(0, 0);
-  i_data_global[5] = set_ext(0, 0);
-  i_data_global[6] = set_ext(0, 0);
-  i_data_global[7] = set_ext(0, 0);
-  i_data_global[8] = set_ext(0, 0);
-  i_data_global[9] = set_ext(0, 0);
+  i_data_global[0] = 1279;
+  i_data_global[1] = 0;
+  i_data_global[2] = 0;
+  i_data_global[3] = 0;
+  i_data_global[4] = 0;
+  i_data_global[5] = 0;
+  i_data_global[6] = 0;
+  i_data_global[7] = 0;
+  i_data_global[8] = 0;
+  i_data_global[9] = 0;
   used_extents = 0;
   return;
 }
@@ -94,7 +94,7 @@ static inline int add_single_block_to_extent(int *blk_adr)
 	  continue;
       if(ext_idx == 9) // If this is the 10th (index 9) extent, there is no 11th to add to.
 	goto add_blk;
-      if(get_ext_cnt(idata[ext_idx+1]) == 0) // If the next extent is empty, we can try to add to this extent without breaking data.
+      if(get_ext_cnt(idata[ext_idx+1]) == 1 && get_ext_pos(idata[ext_idx+1]) == 0) // If the next extent is empty, we can try to add to this extent without breaking data.
 	goto add_blk;
       // If we are here, we saw an extent, but there is at least one valid extent after this we need to add to instead.
     }
@@ -173,7 +173,7 @@ static inline int get_matching_block(int block)
       ext_adr = get_ext_pos(cur_ext);
       ext_cnt = get_ext_cnt(cur_ext);
       printf("Loop cur_ext: %i, adr: %i, cnt: %i, blk_cnt: %i\n", cur_ext, ext_adr, ext_cnt, blk_cnt);
-      if(ext_cnt == 0)
+      if(ext_cnt == 1 && ext_adr == 0)
 	{
 	  printf("Didn't find the block, ext_cnt was 0\n");
 	  return -1;
@@ -186,7 +186,6 @@ static inline int get_matching_block(int block)
 	}
       blk_cnt += ext_cnt;
     }
-  printf("Should not have returned to end of get_matching_block, ret -1\n");
   return -1;
 }
 
@@ -238,20 +237,140 @@ static inline int get_block(int block)
 
 }
 
+static inline void truncate (int target_size)
+{
+  int ext_idx;
+  int cur_ext;
+  int ext_adr;
+  int ext_cnt;
+  int blk_cnt = 0;
+  int del_ext_idx;
+  int ext_off;
+  // int target_size = inode->i_size;
+  int *idata = i_data_global;
+  int junk;
+  int j;
+
+  printf("Inode request for truncate to size: %i\n", target_size);
+  printf("In truncate, these are the extents seen:\n");
+  print_extents();
+
+  for(ext_idx = 0; ext_idx < 10; ext_idx++)
+    {
+      // Get the ith extent.
+      cur_ext = idata[ext_idx];
+      ext_adr = get_ext_pos(cur_ext);
+      ext_cnt = get_ext_cnt(cur_ext);
+
+      if(ext_cnt == 0)
+	{
+	  goto add_blks;
+	}
+      
+      // If keeping this extent and discarding everything after is what we need, do so.
+      if(blk_cnt + ext_cnt == target_size)
+	{
+	  del_ext_idx = ext_idx + 1;
+	  ext_off = 0;
+	  blk_cnt += ext_cnt;
+	  goto rmv_blks;
+	}
+
+      // If we need to delete stuff half way through this extent, set up to do so.
+      if(blk_cnt + ext_cnt > target_size)
+	{
+	  del_ext_idx = ext_idx;
+	  ext_off = target_size - blk_cnt;
+	  blk_cnt += ext_cnt;
+	  goto rmv_blks;
+	}
+
+      // If we are not yet at the right extent, goto the next entents.
+      blk_cnt += ext_cnt;
+    }
+  // If we fall through, we didn't get to the extent count we wanted, let's add blocks until we do.
+ add_blks:
+  for(;;)
+    {
+      // Try to add a single block to the inode.
+      blk_cnt = add_single_block_to_extent(&junk);
+      // If adding a block failed, return failure.
+      if(blk_cnt == -1)
+	goto edone;
+      // Check to see if we added enough blocks, if so, return the address of this block.
+      if(blk_cnt == target_size)
+	goto edone;
+    }  
+
+  // Remove all blocks starting at del_ext_idx + ext_offset into that extent.
+ rmv_blks:
+  // Remove the first potentially offset extent.
+  cur_ext = idata[del_ext_idx];
+  ext_adr = get_ext_pos(cur_ext);
+  ext_cnt = get_ext_cnt(cur_ext);
+  for(j = ext_off; blk_cnt > target_size; j++)
+    {
+      //minix_free_block(inode, block_to_cpu(ext_adr + j));
+      blk_cnt--;
+    }
+  if(ext_off == 0)
+    ext_adr = 0;
+  idata[del_ext_idx] = set_ext(ext_adr, ext_off); ///////////////////////////////////////////////////
+
+  // remove any remaining entire extents.
+  for(ext_idx = del_ext_idx + 1; ext_idx < 10; ext_idx++)
+    {
+      cur_ext = idata[ext_idx];
+      ext_adr = get_ext_pos(cur_ext);
+      ext_cnt = get_ext_cnt(cur_ext);
+      for(j = 0; j < ext_cnt; j++)
+	{
+	  //minix_free_block(inode, block_to_cpu(ext_adr + j));
+	}
+      idata[ext_idx] = set_ext(0, 0);
+    }
+
+  goto edone;
+
+ edone:
+  printf("Got to edone in truncate");
+  printf("These are the extents as truncate is about to return\n");
+  print_extents();
+  printf("\n\n");
+  return;
+}
+
 int main(int argc, char* argv[])
 {
-  int block;
+  char buffer[100];
+  int mode;
+  int num;
   int res;
   create_extents();
   for(;;)
     {
       printf("\n---------------------------\n");
-      printf("Enter block you are looking for:\n");
-      scanf("%i", &block);
-      if(block < 0)
-	exit(0);
-      res = get_block(block);
-      printf("Res from get_block: %i\n", res);
+      printf("Enter input:\n");
+      scanf("%s", buffer);
+      if(buffer[0] == 'g')
+	mode = 0;
+      else if(buffer[0] == 't')
+	mode = 1;
+      else
+	{
+	  printf("You entered something invalid\n");
+	  return 0;
+	}
+      num = atoi(&buffer[1]);
+      if(mode == 0)
+	{
+	  res = get_block(num);
+	  printf("Res from get_block: %i\n", res);
+	}
+      else if(mode == 1)
+	{
+	  truncate(num);
+	}
     }
 }
 
